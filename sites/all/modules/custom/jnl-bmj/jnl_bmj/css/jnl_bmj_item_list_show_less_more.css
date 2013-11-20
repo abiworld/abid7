@@ -1,0 +1,12 @@
+.bmj-hide-list-item,
+.bmj-item-more-less-list.show-full .bmj-item-list-show-more-less  .show-more,
+.bmj-item-more-less-list .bmj-item-list-show-more-less .show-less {
+  display: none;
+}
+
+.bmj-item-more-less-list.show-full .bmj-item-list-show-more-less  .show-less,
+.bmj-item-more-less-list .bmj-item-list-show-more-less .show-more {
+  display: inline-block;
+  *display: inline;
+  *zoom: 1;
+}

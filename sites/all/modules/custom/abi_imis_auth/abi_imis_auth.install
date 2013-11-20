@@ -1,0 +1,104 @@
+<?php
+
+/**
+ * @file
+ * Contains install and update functions for ABI iMIS authentication. */
+
+
+/**
+ * Implementation of hook_uninstall().
+ */
+function abi_imis_auth_uninstall() {
+  // Delete variables
+  variable_del('abi_imis_auth_message');
+  variable_del('abi_imis_auth_host');
+  variable_del('abi_imis_auth_ws_filename');
+  variable_del('abi_imis_auth_ws_method');
+}
+
+/**
+ * Implementation of hook_schema().
+ */
+function abi_imis_auth_schema() {
+  $schema['abi_imis_members'] = array(
+    'description' => 'Stores iMIS/Drupal user ID pairs.',
+    'fields' => array(
+      'member_id' => array(
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'default' => 0,
+        'description' => 'Primary Key: The {abi_imis_members}.member_id.',
+      ),
+      'uid' => array(
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'default' => 0,
+        'description' => 'The {user}.uid associated with the iMIS member.',
+      ),
+      'customer_type' => array(
+        'type' => 'varchar',
+        'length' => 255, 
+        'not null' => TRUE, 
+        'default' => '', 
+        'description' => 'The customer type code of the iMIS member.',
+      ),
+      'paid_thru_date' => array(
+        'type' => 'varchar',
+        'length' => 255, 
+        'not null' => TRUE, 
+        'default' => '', 
+        'description' => 'The paid thru date of the iMIS member.',
+      ),
+      'full_name' => array(
+        'type' => 'varchar',
+        'length' => 255, 
+        'not null' => TRUE, 
+        'default' => '', 
+        'description' => 'The full name of the iMIS member.',
+      ),
+    ),
+    'primary key' => array('member_id'),
+    'unique_keys' => array(
+      'uid' => array('uid'),
+    ),
+    'indexes' => array(
+      'uid' => array('uid'),
+    ),
+  );
+
+  return $schema;
+}
+
+function abi_imis_auth_update_6001() {
+  $ret = array();
+  db_add_field($ret, 'abi_imis_members', 'customer_type', array(
+      'type' => 'varchar',
+      'length' => 255, 
+      'not null' => TRUE, 
+      'default' => '', 
+      'description' => 'The customer type code of the iMIS member.',
+    )
+  );
+  
+  db_add_field($ret, 'abi_imis_members', 'paid_thru_date', array(
+      'type' => 'varchar',
+      'length' => 255, 
+      'not null' => TRUE, 
+      'default' => '', 
+      'description' => 'The paid thru date of the iMIS member.',
+    )
+  );
+  
+  db_add_field($ret, 'abi_imis_members', 'full_name', array(
+      'type' => 'varchar',
+      'length' => 255, 
+      'not null' => TRUE, 
+      'default' => '', 
+      'description' => 'The full name of the iMIS member.',
+    )
+  );
+  
+  return $ret;
+}

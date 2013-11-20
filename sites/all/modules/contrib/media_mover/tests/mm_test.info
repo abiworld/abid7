@@ -1,0 +1,12 @@
+name = "Media Mover API Tests"
+description = "Support module for Media mover API tests."
+package = Testing
+core = 7.x
+dependencies[] = media_mover_api
+hidden = TRUE
+; Information added by drupal.org packaging script on 2013-10-01
+version = "7.x-1.x-dev"
+core = "7.x"
+project = "media_mover"
+datestamp = "1380586535"
+

@@ -1,0 +1,354 @@
+<?php
+
+
+/**
+ * @file
+ * Export module
+ */
+
+
+/**
+ * Implements hook_menu().
+ */
+function mm_export_menu() {
+  $items[MMA_MENU_PATH . '/configuration/import'] = array(
+    'title' => 'Import configuration',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('mm_export_import_configuration_form'),
+    'access arguments' => array('administer media_mover'),
+    'type' => MENU_LOCAL_ACTION,
+  );
+  $items[MMA_MENU_PATH . '/configuration/export'] = array(
+    'title' => 'Export configuration',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('mm_export_export_configuration_form'),
+    'access arguments' => array('administer media_mover'),
+    'type' => MENU_LOCAL_ACTION,
+  );
+  return $items;
+}
+
+
+/**
+ * Export a configuration and display it in a form.
+ */
+function mm_export_export_configuration_form($form, &$form_state, $cid = FALSE) {
+  if ($cid) {
+    $configuration = media_mover_api_configuration_load($cid);
+  }
+  elseif ($cid = (isset($form_state['values']) ? $form_state['values']['cid'] : FALSE)) {
+    $configuration = media_mover_api_configuration_load($cid);
+  }
+
+  if (!isset($configuration)) {
+    // Get all configurations
+    if (! $configurations = media_mover_api_configurations_load()) {
+      drupal_set_message(t('There are no configurations in the system to export'), 'error');
+      return array();
+    }
+    foreach ($configurations as $configuration) {
+      $options[$configuration->cid] = $configuration->name;
+    }
+    $form['cid'] = array(
+      '#title' => t('Chose the configuration to export'),
+      '#type' => 'select',
+      '#options' => $options,
+    );
+    $form['submit'] = array(
+      '#type' => 'submit',
+      '#value' => t('Export'),
+    );
+    return $form;
+  }
+  // We have a configuration
+  else {
+    drupal_set_title(t('Exporting "@name" configuration', array('@name' => $configuration->name)));
+    $code = mm_export_export_media_mover_configurations($configuration);
+    $lines = substr_count($code, "\n");
+    $form['export'] = array(
+      '#title' => t('Export data'),
+      '#type' => 'textarea',
+      '#value' => $code,
+      '#rows' => $lines,
+      '#description' => t('Copy the export text and paste it into another configuration using the import function.'),
+    );
+    return $form;
+  }
+}
+
+
+/**
+ * Submit function for the configuration export
+ *
+ * @param $form
+ * @param $form_state
+ */
+function mm_export_export_configuration_form_submit(&$form, &$form_state) {
+  $form_state['rebuild'] = TRUE;
+}
+
+
+/**
+ * Form for the configuration import
+ */
+function mm_export_import_configuration_form($form, $form_state) {
+  $form = array();
+  $form['instructions'] = array(
+    '#markup' => t('Import Media Mover configuration'),
+  );
+
+  $form['configuration'] = array(
+    '#title' => t('Configuration'),
+    '#type' => 'textarea',
+    '#rows' => 20,
+    '#description' => t('Paste the output of configuration export form.'),
+  );
+
+  $form['unique_ids'] = array(
+    '#title' => t('Make ids unique'),
+    '#type' => 'checkbox',
+    '#default_value' => TRUE,
+  );
+
+  $form['submit'] = array(
+    '#type' => 'submit',
+    '#value' => t('Import'),
+  );
+  return $form;
+}
+
+
+/**
+ * Validate the imported configuration
+ *
+ * @param $form
+ * @param $form_state
+ */
+function mm_export_import_configuration_form_validate(&$form, &$form_state) {
+  $unique_ids = $form_state['values']['unique_ids'];
+  // Extract the configuration and turn into php
+  // @todo: need to sanbox it vigorously, as eval of user-submitted PHP is deadly, even if it is an admin
+  // @todo: need to catch all errors and redirect to drupal_set_message()
+  eval($form_state['values']['configuration']);
+
+  // Ensure that this is a configuration object
+  if (! is_a($configuration, 'media_mover_configuration')) {
+    form_set_error('configuration', t('The code you entered was not a valid configuration.'));
+    return;
+  }
+
+  // Is there an existing configuration by this cid?
+  if ($original_configuration = media_mover_api_configuration_load($configuration->cid)) {
+    if (!$unique_ids) {
+      form_set_error('configuration', t('This configuration id: %id already exists in
+        the system. You can change the name and id of your configuration to import it.
+        You may also !edit_the_existing_one.', array(
+          '%id' => $configuration->cid,
+          '!edit_the_existing_one' => l('edit the existing configuration', MMA_MENU_PATH . '/configuration/' . $configuration->cid)
+        ))
+      );
+      return;
+    }
+  }
+
+  // Investigate each of the steps
+  $errors = array();
+  foreach ($configuration->steps as $import_step) {
+    // Do a module dependency check
+    if (! module_exists($import_step->module)) {
+      $errors[] = t('The module: %module is required for this configuration but is not installed.
+			  In order to use this configuration you will need to install it.', array(
+			    '%module' => $import_step->module,
+			));
+    }
+    // Check to see if this sid exists
+    if ($step = media_mover_api_step_get($import_step->sid)) {
+      if (!$unique_ids) {
+        $errors[] = t('The step #@step_order "%step already" (sid @id) exists.', array(
+          '@step_order' => $import_step->step_order,
+    	    '%step' => $import_step->name,
+          '@id' => $import_step->sid,
+      	));
+      }
+    }
+  }
+  if ($errors) {
+    form_set_error('configuration', t('Error(s) in the imported configuration:'), ' ' . theme('list', $errors));
+  }
+
+}
+
+
+/**
+ * Submit the import configuration form
+ *
+ * @param unknown_type $form
+ * @param unknown_type $form_state
+ */
+function mm_export_import_configuration_form_submit(&$form, &$form_state) {
+  $unique_ids = $form_state['values']['unique_ids'];
+  // Extract the configuration
+  $import_configuration = $form_state['values']['configuration'];
+  eval($form_state['values']['configuration']);
+  if ($unique_ids) {
+    $configuration->cid = media_mover_api_machine_name_create($configuration->cid, 'configuration');
+    foreach ($configuration->steps as $order => $import_step) {
+      $sid = media_mover_api_machine_name_create($import_step->sid, 'step');
+      $configuration->steps[$order]->sid = $sid;
+      $configuration->steps[$order]->cid = $configuration->cid;
+    }
+  }
+  $configuration->save();
+  unset($form_state['storage']);
+  $form_state['#redirect'] = MMA_MENU_PATH . '/configuration/' . $configuration->cid . '/view';
+  drupal_set_message(t('Your configuration has been imported as cid !cid.',
+    array('!cid' => l($configuration->name, MMA_MENU_PATH . '/configuration/' . $configuration->cid))));
+}
+
+
+/**
+ * Ctools export callback - Export a configuration.
+ */
+function mm_export_export_media_mover_configurations($configuration, $indent = '') {
+  ctools_include('export');
+  $config_data = ctools_export_object('media_mover_configurations', $configuration, $indent, $identifier = 'configuration');
+  $config_data = str_replace("'$configuration->cid'", '$cid', $config_data);
+  $output = '$cid = ' . "'$configuration->cid'; // Can be edited\n";
+  $output .= $config_data;
+  $output .= '$configuration->steps = array();';
+  foreach ($configuration->steps as $step) {
+    $output .= "\n\n// ---------------------------------- \n// Step  {$step->step_order}  {$step->name} \n";
+    $step_data = media_mover_api_export_media_mover_steps($step, '  ');
+    $step_data = str_replace("'$configuration->cid'", '$cid', $step_data);
+    $output .= $step_data;
+    $output .= '$configuration->steps[' . $step->step_order . '] = $step; ';
+  }
+  return $output;
+}
+
+
+/**
+ * Ctools export callback - Export a step.
+ */
+function media_mover_api_export_media_mover_steps($obj, $indent = '') {
+  ctools_include('export');
+  $obj = mm_export_step_load($obj->sid);
+  // Reset step state for export
+  $obj->status = 'ready';
+  $obj->start_time = 0;
+  $obj->stop_time = 0;
+  $output = ctools_export_object('media_mover_steps', $obj, $indent, $identifier = 'step');
+  return $output;
+}
+
+
+/**
+ * Load a single configuration.
+ */
+function mm_export_configuration_load($cid) {
+  ctools_include('export');
+  $result = ctools_export_load_object('media_mover_configurations', 'names', array($cid));
+  if (isset($result[$cid])) {
+    return $result[$cid];
+  }
+}
+
+
+/**
+ * Load a single step.
+ */
+function mm_export_step_load($sid) {
+  ctools_include('export');
+  $result = ctools_export_load_object('media_mover_steps', 'names', array($sid));
+  if (isset($result[$sid])) {
+    return $result[$sid];
+  }
+}
+
+
+
+/**
+ * Implements hook_features_export().
+ */
+function media_mover_configurations_features_export($data, &$export, $module_name = '') {
+  // Add media mover api dependency
+  $export['dependencies'][] = 'media_mover_api';
+  foreach ($data as $cid) {
+    $export['features']['media_mover_configurations'][] = $cid;
+    // Load the configuration
+    $configuration = media_mover_api_configuration_load($cid);
+    // Get steps for this config and add them to the export.
+    foreach ($configuration->steps as $step) {
+      $export['features']['media_mover_steps'][] = $step->sid;
+      // Get module dependencies for the step.
+      $module = mm_export_step_dependencies($step->sid);
+      if (!in_array($module, $export['dependencies'])) {
+        $export['dependencies'][] = $module;
+      }
+    }
+  }
+
+  // Pass the export on to ctools for further dependency checking
+  return array('ctools' => array('media_mover_configurations', 'media_mover_steps'));
+}
+
+
+/**
+ * Implementation of hook_features_export()
+ */
+function media_mover_steps_features_export($data, &$export, $module_name = '') {
+  // Get steps for this configs and their module dependencies.
+  foreach ($data as $sid) {
+    $export['features']['media_mover_steps'][] = $sid;
+    $module = mm_export_step_dependencies($sid);
+    if (! in_array($module, $export['dependencies'])) {
+      $export['dependencies'][] = $module;
+    }
+  }
+  // Pass the export on to ctools for further dependency checking
+  return array('ctools' => array('media_mover_steps'));
+}
+
+
+/**
+ * Utility function to get dependencies for the step
+ * @param $sid
+ *   String, step id
+ * @return
+ *   String, module name
+ */
+function mm_export_step_dependencies($sid) {
+  ctools_include('export');
+  $result = ctools_export_load_object('media_mover_steps', 'names', array($sid));
+  return $result[$sid]->module;
+}
+
+
+/**
+ * Implements hook_ctools_plugin_directory().
+ */
+function mm_export_ctools_plugin_directory($module, $type) {
+  // Load the export_ui plugin.
+  if ($type == 'export_ui') {
+    // return 'plugins/export_ui';
+  }
+}
+
+
+
+
+/**
+ * @todo Please document this function.
+ * @see http://drupal.org/node/1354
+ */
+function mm_export_presets_load($name = NULL) {
+  // Use Ctools export API to fetch all presets from the DB as well as code.
+  ctools_include('export');
+  if ($name) {
+    $presets = ctools_export_load_object('media_mover_configurations', 'names', array($name));
+    return isset($presets[$name]) ? $presets[$name] : FALSE;
+  }
+  else {
+    return ctools_export_load_object('media_mover_configurations');
+  }
+}

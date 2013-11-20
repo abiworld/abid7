@@ -1,0 +1,115 @@
+<?php
+
+/**
+ * @files
+ * Implements hooks for testing purposes
+ */
+
+
+define('MM_TEST_STATUS_FIRST', 'custom');
+define('MM_TEST_STATUS_SECOND', 'custom_second');
+
+
+/**
+ * Implements hook_cron().
+ *
+ * Runs all active configurations
+ *
+ * @ingroup drupal_hooks
+ */
+function mm_test_cron() {
+  $custom_queue_first = DrupalQueue::get('mm_test_custom_queue_first');
+  $custom_queue_second = DrupalQueue::get('mm_test_custom_queue_second');
+
+  $query = db_select('media_mover_files', 'mmf');
+  $query->fields('mmf', array('mmfid', 'status'));
+  $files = $query->execute();
+
+  foreach ($files as $file) {
+    $file = new media_mover_file($file->mmfid);
+    if ($file->status == MM_TEST_STATUS_FIRST) {
+      $custom_queue_first->createItem($file);
+    }
+    elseif ($file->status == MM_TEST_STATUS_SECOND) {
+      $custom_queue_second->createItem($file);
+    }
+  }
+}
+
+
+/**
+ * Implements hook_cron_queue_info().
+ */
+function mm_test_cron_queue_info() {
+  $queues['mm_test_custom_queue_first'] = array(
+    'worker callback' => 'mm_test_custom_queue_first',
+    'time' => 6000
+  );
+  $queues['mm_test_custom_queue_second'] = array(
+    'worker callback' => 'mm_test_custom_queue_second',
+    'time' => 6000
+  );
+  return $queues;
+}
+
+
+/**
+ * Implements hook_media_mover().
+ *
+ * This is for testing purposes only.
+ *
+ * @return array
+ */
+function mm_test_media_mover() {
+  $items = array();
+  $items['select'] = array(
+    'description' => t('Test select'),
+    'callback' => 'mm_test_select',
+    'configuration' => 'mm_test_select_config',
+    'select' => TRUE,
+  );
+  $items['store'] = array(
+    'description' => t('Test store'),
+    'callback' => 'mmm_test_store',
+    'configuration' => 'mm_test_store_config',
+  );
+  $items['custom_status'] = array(
+    'description' => t('Custom status'),
+    'callback' => 'mmm_test_custom_status',
+  );
+  return $items;
+}
+
+
+/**
+ * Set a file status to a custom value.
+ *
+ * @param type $step
+ * @param type $file
+ * @return boolean
+ */
+function mmm_test_custom_status($step, &$file) {
+  $file->status = MM_TEST_STATUS_FIRST;
+  return TRUE;
+}
+
+
+/**
+ * Queue worker to process a file
+ *
+ * @param $file
+ *   Object, Media Mover file
+ */
+function mm_test_custom_queue_first($file) {
+  $file->status_set(MM_TEST_STATUS_FIRST, MM_TEST_STATUS_SECOND);
+}
+
+/**
+ * Queue worker to process a file
+ *
+ * @param $file
+ *   Object, Media Mover file
+ */
+function mm_test_custom_queue_second($file) {
+  $file->status_set(MM_TEST_STATUS_SECOND, MMA_FILE_STATUS_FINISHED);
+}

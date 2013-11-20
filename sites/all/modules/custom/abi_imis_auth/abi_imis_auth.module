@@ -1,0 +1,603 @@
+<?php
+
+/**
+ * Implements hook_menu().
+ */
+function abi_imis_auth_menu() {
+  $items = array();
+
+  $items['admin/people/abi_imis_auth'] = array(
+    'title'             => 'ABI iMIS Member authentication',
+    'page callback'    => 'drupal_get_form',
+    'page arguments'   => array('abi_imis_auth_settings'),
+    'access arguments' => array('administer ABI iMIS authentication settings'),
+    'description'       => 'Manage settings for the ABI iMIS authentication module including authentication URL and optional extra permission checks',
+  );
+
+  return $items;
+}
+
+function abi_imis_auth_vars() {
+  return array(
+    'is_member'        => '<IsMember>',
+    'customer_type'    => '<CustomerTypeCode>',
+    'contact_status'   => '<ContactStatusCode>',
+    'billing_category' => '<BillingCategory>',
+  );
+}
+
+/**
+ * Settings for the module
+ *
+ * @ingroup form
+ */
+function abi_imis_auth_settings() {
+  $form['settings'] = array(
+    '#type'          => 'fieldset',
+    '#title'         => t('ABI iMIS member site host'),
+    '#description'   => t('ABI iMIS member site host name, service and method to authenticate against.'),
+  );
+
+  $form['settings']['abi_imis_auth_host'] =  array(
+    '#type'          => 'textfield',
+    '#title'         => t('Host'),
+    '#default_value' => variable_get('abi_imis_auth_host', ''),
+    '#description'   => t('The host name to authenticate against. You must include the url scheme <em>e.g. http://</em>. Do not include a trailing <em>/</em>'),
+    '#required' => TRUE,
+  );
+
+  $form['settings']['abi_imis_auth_ws_filename'] =  array(
+    '#type'          => 'textfield',
+    '#title'         => t('Webservice filename'),
+    '#default_value' => variable_get('abi_imis_auth_ws_filename', ''),
+    '#description'   => t('The webservice filename to authenticate against.'),
+    '#required' => TRUE,
+  );
+
+  $form['settings']['abi_imis_auth_ws_method'] =  array(
+    '#type'          => 'textfield',
+    '#title'         => t('Webservice method'),
+    '#default_value' => variable_get('abi_imis_auth_ws_method', ''),
+    '#description'   => t('The webservice method to authenticate against.'),
+    '#required' => TRUE,
+  );
+
+  $form['abi_imis_auth_disable_forgot_password'] = array(
+    '#type'          => 'checkbox',
+    '#title'         => t('Disable "request new password" links on login forms'),
+    '#default_value' => variable_get('abi_imis_auth_disable_forgot_password', 1),
+    '#description'   => t('Selecting this option disables the "request new password" links on login forms. These links normally take users
+                           to the Drupal reset password pages. Passwords are managed by the remote iMIS authentication server. Resetting
+                           the Drupal password does NOT reset the iMIS user password.  Disabling these links is recommended.  Users that are
+                           exempt from iMIS authentication can still reset their password on their profile pages, or have an administrator reset
+                           the password for them')
+  );
+
+  $form['abi_imis_auth_message'] = array(
+    '#type'          => 'textarea',
+    '#title'         => t('Login notice'),
+    '#default_value' => variable_get('abi_imis_auth_message', ''),
+    '#description'   => t('You can include a note that will apear below the login form and the login block to notify users that they can authenticate using iMIS credentials.'),
+  );
+  
+  $form['abi_imis_auth_email_message'] = array(
+    '#type'          => 'textarea',
+    '#title'         => t('Email notice'),
+    '#default_value' => variable_get('abi_imis_auth_email_message', ''),
+    '#description'   => t('You can include a notice that will appear below the email address when editing a user account to inform the user 
+                           how to change their email address on the iMIS database.'),
+  );
+  
+  $form['abi_imis_auth_email_changed_message'] = array(
+    '#type'          => 'textarea',
+    '#title'         => t('Email changed notice'),
+    '#default_value' => variable_get('abi_imis_auth_email_changed_message', ''),
+    '#description'   => t('Configure an information message to display when a change of email address is detected. This message informs the 
+                           user that their new email address has been registered in Drupal and can be used to advise them of any impacts this 
+                           may have on their Drupal account (e.g. email-based services).'),
+  );
+
+  $form['abi_imis_auth_exempt'] = array(
+    '#type'          => 'textarea',
+    '#title'         => t('Exempt users'),
+    '#default_value' => variable_get('abi_imis_auth_exempt', ''),
+    '#description'   => t('List of Drupal User IDs on this site to exempt from iMIS authentication.
+                           Enter one user ID per line. These users will login using their Drupal credentials,
+                           and can have roles in addition to "authenticated user".  The user ID of a user can be
+                           determined by visiting !link and clicking on the "edit" link for each user.  The user ID will
+                           then be visible in the URL in the format /user/##/edit where ## is the user ID.', array('!link' => l(t('admin/people'), 'admin/people'))),
+  );
+
+  $form['abi_imis_auth_exmpt_list'] = array(
+    '#prefix' => t('Currently exempt users'),
+    '#markup' => abi_imis_auth_exempt_list(abi_imis_auth_textarea_to_array('abi_imis_auth_exempt')),
+  );
+
+  $form['vars'] = array(
+    '#type'          => 'fieldset',
+    '#collapsible'   => TRUE,
+    '#collapsed'     => TRUE,
+    '#title'         => t('Additional user authentication checks'),
+    '#description'   => t('You may wish to check certain user values before granting access to the site.
+                           Select the addition checks you want to make and provide a list of valid values
+                           that a user must have before they can be granted access to your site.'),
+  );
+
+  foreach (abi_imis_auth_vars() as $key => $var) {
+    $form['vars']['abi_imis_auth_var_' . $key] =  array(
+      '#type'          => 'checkbox',
+      '#title'         => t('Check @var', array('@var' => $var)),
+      '#default_value' => variable_get('abi_imis_auth_var_' . $key, 0),
+    );
+
+    $form['vars']['abi_imis_auth_val_' . $key] =  array(
+      '#type'          => 'textarea',
+      '#title'         => t('Valid values'),
+      '#default_value' => variable_get('abi_imis_auth_val_' . $key, ''),
+      '#description'   => t('One value per line.')
+    );
+  }
+
+  $form = system_settings_form($form);
+
+  $form['#validate'][] = 'abi_imis_auth_admin_form_validate';
+  $form['#submit'][] = 'abi_imis_auth_admin_form_submit';
+
+  return $form;
+}
+
+function abi_imis_auth_exempt_list($list) {
+  $header = array(t('User ID'), t('User Name'), t('Email Address'));
+  $rows = array();
+  foreach($list as $uid) {
+    $uid = (int) $uid;
+    if ($uid && $user = user_load($uid)) {
+      $name = theme('username', array('account' => $user));
+      $email = l($user->mail, 'mailto:'. $user->mail);
+      $rows[] = array($user->uid, $name, $email);
+    }
+  }
+  $output = theme('table', array('header' => $header, 'rows' => $rows, 'empty' => t('No exempted users.')));// go through the list and mark it up in a table or something for display.
+  return $output;
+}
+
+/**
+ * Provide some validation of the module settings form
+ */
+function abi_imis_auth_admin_form_validate($form, &$form_state) {
+
+  $host = $form_state['values']['abi_imis_auth_host'];
+  $parsedurl = parse_url($host);
+  if (isset($parsedurl['scheme'])) {
+    $scheme = $parsedurl['scheme'];
+    if (($scheme != 'http') && ($scheme != 'https')){
+      form_set_error('abi_imis_auth_host', t('Invalid url scheme. Must be one of http or https'));
+    }
+  }
+  else {
+    form_set_error('abi_imis_auth_host', t('Missing url scheme. Include http:// or https:// as part of the url'));
+  }
+}
+
+function abi_imis_auth_admin_form_submit($form, &$form_state) {
+  //since there is an option to alter a menu (by disabling a local menu task)
+  //we need to rebuilt the menu if that setting is changed
+  if ($form['abi_imis_auth_disable_forgot_password']['#value'] != $form['abi_imis_auth_disable_forgot_password']['#default_value']) {
+    menu_rebuild();
+  }
+}
+
+/**
+ * Implements hook_form_alter().
+ *
+ * Change the normal form login form behavior.
+ *
+ */
+function abi_imis_auth_form_alter(&$form, &$form_state, $form_id) {
+
+  // Replace the drupal authenticate function is it's used as validation.
+  if (isset($form['#validate']) && is_array($form['#validate']) && ($key = array_search('user_login_authenticate_validate', $form['#validate'])))
+    $form['#validate'][$key] = 'abi_imis_auth_login_validate';
+
+  switch ($form_id) {
+    case 'user_login':
+    case 'user_login_block':
+      // Login form extra info
+      $msg = variable_get('abi_imis_auth_message', '');
+      if ($msg) {
+        $form['member-auth'] = array(
+          '#markup'  => filter_xss_admin($msg),
+          '#prefix' => '<div>',
+          '#suffix' => '</div>',
+          '#weight' => -10,
+        );
+      }
+      $disable_links = variable_get('abi_imis_auth_disable_forgot_password', 0);
+      if ($disable_links) {
+        $form['links'] = NULL;
+      }
+      break;
+    case 'user_profile_form':
+      // Prevent non-exempt users from updating account details
+      global $user;
+      $list = abi_imis_auth_textarea_to_array('abi_imis_auth_exempt');
+      if ($user->uid != 1 && !in_array($user->uid, $list)) {
+        $form['account']['pass']['#access'] = FALSE;
+        $form['account']['mail']['#description'] = $form['account']['mail']['#description'] . ' ' . t("This will not update your iMIS account's email address.");
+        if (!empty($user->mail)) {
+          $form['account']['mail']['#access'] = FALSE;
+          $form['account']['mail_display'] = array(
+            '#type' => 'item',
+            '#title' => t('E-mail address'),
+            '#markup' => $form['account']['mail']['#default_value'],
+            '#description' => variable_get('abi_imis_auth_email_message', ''),
+            '#weight' => -1,
+        );
+        }
+      }
+      break;
+  }
+}
+
+/**
+ * List of values from a textarea
+ */
+function abi_imis_auth_textarea_to_array($var_name) {
+  $list = array();
+
+  // Get the list of values from textarea
+  $list = array_filter(array_map('trim', explode("\n", variable_get($var_name, ''))));
+
+  // remove new lines and other stuff from the values
+  $sanitized_list = array();
+
+  foreach ($list as $key => $value) {
+    $sanitized_list[$key] = trim($value);
+  }
+  // Return list
+  return $sanitized_list;
+}
+
+/**
+ * Validate the user based on another Drupal site
+ */
+function abi_imis_auth_login_validate($form, &$form_state) {
+  // Get the name and password fields from the form
+  $name = $form_state['values']['name'];
+  // The password as entered by the user
+  $pass = $form_state['values']['pass'];
+
+  // Check if the account already exists or its a new user
+  $account = user_load_by_name($name);
+  if (isset($account->uid)) {
+    // Find out if the user is in the list of exempt users
+    $list = abi_imis_auth_textarea_to_array('abi_imis_auth_exempt');
+      // Check if uid 1 is in the list
+    if (!in_array(1, $list)) {
+      //if not add it to the list to ensure site admin uses normal authentication
+      $list[] = 1;
+    }
+    foreach ($list as $key => $uid) {
+      if ($uid == $account->uid) {
+        // This is the site admin or another user on the list,
+        // we just do normal authentication and return (skipping external authentication)
+        $uid = user_authenticate($name, $pass);
+        $form_state['uid'] = $uid;
+        return;
+      }
+    }
+  }
+
+  // Attempt remote authentication
+  $ret = abi_imis_auth_webservice($name, $pass);
+  if (!$ret['result']) {
+    // User does not have a valid name/pass in the abi_imis_members table
+    // @TODO sort through the error messages we're willing to display and those we aren't
+    // e.g. if error number is negative its a local configuration error say the module is incorrectly configured and tell admin to check the log
+    form_set_error('name', $ret['message']);
+    return;
+  }
+  else {
+    // Check the additional fields
+    foreach (abi_imis_auth_vars() as $key => $var) {
+      $check = variable_get('abi_imis_auth_var_' . $key, 0);
+      if ($check) {
+        $list = abi_imis_auth_textarea_to_array('abi_imis_auth_val_' . $key);
+        if (!abi_imis_auth_check_values($ret[$key], $list)) {
+          $err_msg  = 'Your login has been accepted but our records show that your membership is not up to date. ';
+          $err_msg .= 'Please contact us for assistance.';
+          form_set_error('name', $err_msg);
+          return;
+        }
+      }
+    }
+    // Remote login is valid
+    $uid = db_query("SELECT uid FROM {abi_imis_members} WHERE member_id = :id", array(':id' => $ret['id']))->fetchField();
+    //if the remote uid exists in our database do a check to see if it matches the user we loaded earlier
+    if ($uid && $uid == $account->uid) {
+      // appears to be a valid existing user
+      // do additional user system checks before fully granting access.
+
+      //for some reason if the login form is submitted from a block calling
+      //user_external_login will work to do the additional validation of the user
+      //however, if the form is submitted from /user/login
+      //user_external_login will go into an infinite loop as it re-loads the login form
+      //As a work around - we do the same checks from that function here.
+
+      // Check if user is blocked or denied by access rules.
+      $form_state['uid'] = $uid;
+      user_login_name_validate($form, $form_state);
+      if (form_get_errors()) {
+        // Invalid login.
+        return;
+      }
+      // Valid login.
+      global $user;
+      $user = $account;
+
+      // Check email address from iMIS vs. email address in Drupal. If the Drupal email address is empty, update it
+      // using the email address from iMIS. If the email address from iMIS does not match the email address in Drupal,
+      // display a message to the user about the email address change. If the email addresses from both systems match, 
+      // take no additional action and proceed with finalizing the login.
+
+      if (!empty($ret['mail']) && $user->mail != $ret['mail']) {
+        $msg = variable_get('abi_imis_auth_email_changed_message', '');
+        if ($msg) {
+          drupal_set_message(filter_xss($msg));
+        }
+        $user->mail = $ret['mail'];
+        db_update('users')->fields(array('mail' => $ret['mail']))->condition('uid', $user->uid)->execute();
+      }
+      
+      db_update('abi_imis_members')
+        ->fields(array(
+          'customer_type' => $ret['customer_type'],
+          'paid_thru_date' => $ret['paid_thru_date'],
+          'full_name' => $ret['full_name'],
+        ))
+        ->condition('member_id', $ret['id'])
+        ->execute();
+      
+      //provide some feedback for the user
+      drupal_set_message(t('Welcome %username', array('%username' => $account->name)));
+      return;
+    }
+    else {
+      // Create a new local user.  We do not call user_external_login_register()
+      // because it assumes the "regular" way of Drupal user registration,
+      // i.e. generate a random password, ...etc. We don't want that workflow.
+      $uid = abi_imis_auth_user_save($name, $pass, $ret['id'], $ret['mail'], $ret);
+      $form_state['uid'] = $uid;
+      return;
+    }
+  }
+}
+
+function abi_imis_auth_check_values($key, $values = array()) {
+  foreach ($values as $k => $value) {
+    if ($key == $value) {
+      return TRUE;
+    }
+  }
+  return FALSE;
+}
+/**
+ * Save the user data to the Drupal user's table
+ */
+function abi_imis_auth_user_save($name, $pass, $member_id, $mail, $data) {
+  global $user;
+
+  // Create a user array from the data
+  $module = 'abi_imis_auth';
+  $userinfo = array(
+    'name'             => $name,
+    'pass'             => $pass,
+    'mail'             => $mail,
+    'init'             => $name,
+    'status'           => 1,
+    'access'           => time(),
+    "authname_$module" => $name,
+  );
+  // Save it to the user table
+  $account = user_save(NULL, $userinfo);
+
+  // Save the remote user id
+  db_delete('abi_imis_members')->condition('member_id', $member_id)->execute();
+  db_insert('abi_imis_members')
+    ->fields(array(
+      'member_id' => $member_id,
+      'uid' => $account->uid,
+      'customer_type' => $data['customer_type'],
+      'paid_thru_date' => $data['paid_thru_date'],
+      'full_name' => $data['full_name'],
+    ))
+    ->execute();
+
+  // Set the global variable
+  $user = $account;
+
+  // Log this information
+  watchdog('user', 'New member: %name via %module.', array('%name' => $name, '%module' => $module), WATCHDOG_NOTICE, l(t('edit'), 'user/'. $user->uid .'/edit'));
+  return $user->uid;
+}
+
+/**
+ * Web service processing
+ */
+function abi_imis_auth_webservice($name = '', $pass = '') {
+  $host = variable_get('abi_imis_auth_host', '');
+  $ws_filename = variable_get('abi_imis_auth_ws_filename', '');
+  $ws_method = variable_get('abi_imis_auth_ws_method', '');
+  if (!$host || !$ws_filename || !$ws_method) {
+    // Module not configured, return a message.
+    $msg = t('This site is not configured correctly for remote member authentication. Please contact the administrator.');
+    watchdog('abi_imis_auth', $msg, array(), WATCHDOG_ERROR);
+    return array(
+      'result'  => FALSE,
+      'message' => $msg,
+    );
+  }
+
+  // The URL to send the web service authentication requests to
+  $url = $host . '/' . $ws_filename . '/' . $ws_method;
+   
+  $result = drupal_http_request( $url );
+  $services_ping = intval( $result -> code ) != 200 ? intval( $result -> code ) : TRUE;
+  if($services_ping)
+  {
+    echo "successful Webservice Connect";
+  }
+
+  // An array of POST variables
+  $data = array(
+    'login' => $name,
+    'password' => $pass,
+  );
+  // Header for mime type
+  $headers = array(
+    //'Content-Type' => 'application/x-www-form-urlencoded; charset=utf-8',
+  );
+
+  // Post to the host
+ if ( FALSE === module_load_include( 'php', 'abi_imis_auth', 'soap/nusoap' ) || !class_exists( 'nusoap_client' ) ) {
+    echo "Soap Client Missing";
+  }
+  else
+  {
+    echo "testing";
+  }
+  $client = new nusoap_client( $url, 'wsdl', '', '', '', '' );
+   
+
+  $result = $client->call( 'Login', $data, '', '', FALSE, TRUE );
+  var_dump($result->LoginResult);
+  $e_result = $client->call('Profile',array( 'method' => 'get', 'id' => $name -> uid, 'profile' => '' ));
+  var_dump($e_result);die;
+  if ($result->code != 200) {
+    // Request not successful
+    $msg = t('Attempt to authenticate user %name at host %host failed with HTTP error code: %code.',
+      array('%name' => $name, '%host' => $host, '%code' => $result->code));
+
+    // Log the error to the watchdog
+    watchdog('abi_imis_auth', $msg, array(), WATCHDOG_ERROR);
+
+    // Return a message
+    return array(
+      'result'  => FALSE,
+      'message' => $msg,
+      );
+  }
+
+  $parsed_data = abi_imis_auth_parse_xml($result->data);
+
+  if (!is_numeric($parsed_data['id'])) {
+    // No numeric ID returned, so return an error
+    return array(
+      'result'  => FALSE,
+      'message' => $parsed_data['message'],
+      );
+  }
+
+  return $parsed_data;
+}
+
+/**
+ * A simple xml parsing function.
+ *
+ * @param  $xml        A text string that contains the xml to be parsed.
+ * @return array       An array of the resulting authentication.
+ */
+function abi_imis_auth_parse_xml($xml) {
+  $login_results = new SimpleXMLElement($xml);
+
+  return array(
+    // We are successful, return the ID and the message
+    'result'           => TRUE,
+    'id'               => (string) $login_results->ID,
+    'message'          => (string) $login_results->ResultMessage,
+    'is_member'        => (string) $login_results->IsMember,
+    'customer_type'    => (string) $login_results->CustomerTypeCode,
+    'contact_status'   => (string) $login_results->ContactStatusCode,
+    'paid_thru_date'   => (string) $login_results->PaidThruDate,
+    'full_name'        => (string) $login_results->FullName,
+    'billing_category' => (string) $login_results->BillingCategory,
+    'mail'             => (string) $login_results->Email,
+  );
+}
+
+/**
+ * Implements hook_user_delete().
+ */
+function abi_imis_auth_user_delete($account) {
+  db_delete('abi_imis_members')->condition('uid', $account->uid)->execute();
+}
+
+/**
+ * Implements hook_user_view().
+ */
+function abi_imis_auth_user_view($account, $view_mode, $langcode) {
+  $list = abi_imis_auth_textarea_to_array('abi_imis_auth_exempt');
+  if ($account->uid != 1 && !in_array($account->uid, $list)) {
+    $result = db_query("SELECT * FROM {abi_imis_members} WHERE uid = :uid LIMIT 1", array(':uid' => $account->uid))->fetchAll();
+    $result = reset($result);
+    if ($result) {
+      $account->content['membership_info'] = array(
+        '#type' => 'user_profile_category',
+        '#attributes' => array('class' => 'user-member'),
+        '#weight' => -1,
+        '#title' => t('Membership Information'),
+      );
+      $account->content['membership_info']['id'] = array(
+        '#type' => 'user_profile_item',
+        '#title' => t('ID'),
+        '#markup' => $result->member_id,
+        '#weight' => 0,
+      );
+      $account->content['membership_info']['full_name'] = array(
+        '#type' => 'user_profile_item',
+        '#title' => t('Member Name'),
+        '#markup' => $result->full_name,
+        '#weight' => 1,
+      );
+      $account->content['membership_info']['customer_type'] = array(
+        '#type' => 'user_profile_item',
+        '#title' => t('Member Type'),
+        '#markup' => $result->customer_type,
+        '#weight' => 2,
+      );
+      // Special case for date since format_date() produces a notice when first 
+      // argument isn't a UNIX timestamp.
+      if (!empty($result->paid_thru_date)) {
+        $account->content['membership_info']['paid_thru_date'] = array(
+          '#type' => 'user_profile_item',
+          '#title' => t('Expiry Date'),
+          '#markup' => format_date(strtotime($result->paid_thru_date), 'custom', 'Y-m-d'),
+          '#weight' => 3,
+        );
+      }
+    }
+  }
+}
+
+/**
+ * Implements hook_permission().
+ */
+function abi_imis_auth_permission() {
+  return array(
+    'administer iMIS authentication settings' => array(
+      'title' => t('Administer iMIS authentication settings'),
+    ),
+  );
+}
+
+/**
+ * Implements hook_menu_alter().
+ *
+ * Disable 'request new password' local menu
+ */
+function abi_imis_auth_menu_alter(&$items) {
+  $disable_links = variable_get('abi_imis_auth_disable_forgot_password',0);
+  if ($disable_links) {
+    $items['user/password']['access callback'] = FALSE;
+  }
+}

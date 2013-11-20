@@ -1,0 +1,53 @@
+<?php
+
+/**
+ * @files
+ * Provides testing for the source plugin.
+ */
+
+class MediaMoverPluginSource extends MediaMoverTestHelper {
+
+  /**
+   * Define tests.
+   */
+  public static function getInfo() {
+    // Note: getInfo() strings should not be translated.
+    return array(
+      'name' => 'Media Mover source plugin test',
+      'description' => 'Test to ensure the source plugin works correctly.',
+      'group' => 'Media Mover',
+    );
+  }
+
+  
+  /**
+   * Test the source plugin.
+   */
+  function testMediaMoverConfigurationRun() {
+    $test_filepath = drupal_get_path('module', 'media_mover_api') . '/tests/test_files/test_file.txt';
+
+    // Create a configuration.
+    $configuration = $this->newMediaMoverTestConfiguration();
+    // Add select and store steps.
+    $configuration->steps[] = $this->newMediaMoverStepSelect($configuration);
+    $configuration->steps[] = $this->newMediaMoverStepStore($configuration);
+    $configuration->steps[] = $this->newMediaMoverStepSource($configuration);
+    $configuration->save();
+
+    // Run the configuration.
+    $configuration->run();
+
+    $this->assert($configuration->file_selected($test_filepath), 'Test file has been correctly selected');
+
+    // Get the processed file.
+    $file = array_pop($configuration->get_files());
+
+    // Check the start/finish URIs.
+    $this->assertTRUE(($test_filepath == $file->uri), 'Processed file URI matches selected file.');
+    $this->assertTRUE(($file->uri == $file->source_uri), 'Processed file source matches the final URI.');
+
+    $steps = $file->data_get('steps');
+    $this->assertTRUE(($steps[1]['result_uri'] != $file->uri) && ($file->uri == $file->source_uri), 'Processed file source matches the final URI.');
+  }
+
+}

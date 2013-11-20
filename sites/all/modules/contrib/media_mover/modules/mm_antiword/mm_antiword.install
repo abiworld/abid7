@@ -1,0 +1,26 @@
+<?php
+
+/**
+ * @file
+ * Install file for mm antiword
+ */
+
+
+/**
+ * Implements hook_uninstall().
+ */
+function mm_antiword_uninstall() {
+  variable_set('mm_antiword_path');
+}
+
+
+/**
+ * Implements hook_enable().
+ */
+function mm_antiword_enable() {
+  if (! mm_antiword_binary_search()) {
+    drupal_set_message(t('Failed to find Antiword binary. Please set the path in your !settings.', array(
+      '!settings' => l(t('settings'), MMA_MENU_PATH . '/settings/mm_antiword')
+    )), 'error');
+  }
+}

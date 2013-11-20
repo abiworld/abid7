@@ -1,0 +1,231 @@
+/*
+#video-pane {
+    background-color:#efefef;
+    width:300px;
+    margin:50px auto;
+    padding:20px 150px 20px 50px;
+    min-height:250px;
+    border:2px solid #fff;
+    outline:1px solid #ccc;
+    text-align:left;
+}
+*/
+
+#video-pane h1, #video-pane h2 {
+    letter-spacing:-1px;
+    color:#2D5AC3;
+    font-weight:normal;
+    margin-bottom:-10px;
+}
+
+#video-pane h1 {
+    font-size:22px;
+}
+
+#video-pane h2 {
+    font-size:18px;
+}
+
+#video-pane .less {
+    color:#999;
+    font-size:12px;
+}
+
+#video-pane a {
+    color:#295c72;
+}
+
+#video-pane #videoplayer {
+    display:block;
+    width:300px;
+    height:159px
+}
+
+#video-page #videoplayer {
+    display:block;
+    width:620px;
+    height:360px
+}
+
+/* video playlist */
+
+a.player {
+    display:block;
+    width:500px;
+    height:340px;
+    text-align:center;
+    color:#fff;
+    text-decoration:none;
+    cursor:pointer;
+    background:#000 url(/sites/all/themes/bmj/bmj/images/flowplayer/h500.png) repeat-x 0 0;
+    background:-moz-linear-gradient(top, rgba(55, 102, 152, 0.9), rgba(6, 6, 6, 0.9));
+    -moz-box-shadow:0 0 40px rgba(100, 118, 173, 0.5);
+}
+
+a.player:hover {
+    background:-moz-linear-gradient(center top, rgba(73, 122, 173, 0.898), rgba(6, 6, 6, 0.898));
+}
+
+/* splash image */
+a.player img {
+    margin-top:125px;
+    border:0;
+}
+
+
+
+/* podcast playlist style */
+#playlistplayer-two {
+    float:left;
+    height:180px;
+    width:300px;
+}
+
+/* video playlist style */
+
+#playlistplayer {
+    float:left;
+    height:270px;
+    width:485px;
+}
+
+a.playlistplayer  {
+    background: -moz-linear-gradient(center top , rgba(55, 102, 152, 0.9), rgba(6, 6, 6, 0.9)) repeat scroll 0 0 transparent;
+    box-shadow: 0 0 40px rgba(100, 118, 173, 0.5);
+    color: #FFFFFF;
+    cursor: pointer;
+    display: block;
+    height: 340px;
+    text-align: center;
+    text-decoration: none;
+    width: 500px;
+}
+
+a.playlistplayer img {
+    border: 0 none;
+    margin-top:90px;
+}
+
+a.videoplayer img {
+    border: 0 none;
+    margin-top: 80px;
+}
+
+a.m-videoplayer img {
+    border: 0 none;
+    margin-top: 90px;
+}
+
+.video-widget a.m-videoplayer img {
+    border: 0 none;
+    margin-top: 40px;
+}
+
+
+#playlist a.vitems {
+    margin: 0;
+    padding: 0;
+}
+
+#playlist a.vitems p{
+  clear:left;
+    font-weight: normal;
+    line-height: 1.3em;
+    margin: 0;
+    padding: 2px 6px 0 0 !important;
+}
+
+#playlist {
+  color: #FFFFFF;
+    height: 325px;
+    overflow: hidden;
+    position: absolute;
+    right: 0;
+    top: 0;
+    width:135px;
+    z-index: 100;
+}
+
+#playlist div.views-row {
+  width:135px;
+  height:90px;
+  cursor: pointer;
+    list-style: none outside none;
+    margin: 0;
+    overflow:visible;
+    padding: 0;
+    width: 100%;
+}
+
+/* playlist entry */
+#playlist a.vitems {
+  display:block;
+    background: url("/sites/all/modules/bmj/bmj/bmj_views/images/bg-nav.gif") repeat scroll 0 0 transparent;
+    color: #FFFFFF;
+    height:90px;
+    padding-left: 6px;
+    position: relative;
+  width: 129px;
+}
+
+#playlist a.vitems span.image {
+  height: 40px;
+    width: 40px;
+  border: 1px solid #2D3F4D;
+    display: block;
+    float: right;
+    height: 40px;
+    margin: 8px 5px 0 3px;
+    overflow: hidden;
+}
+
+/* different states of a playlist entry */
+#playlist a:hover {
+    background: url("/sites/all/modules/bmj/bmj/bmj_views/images/bg-nav-grad.gif") repeat scroll 0 0 transparent;
+}
+
+#playlist a.progress {
+    background:#000;
+}
+
+#playlist a.playing {
+  background:#333;
+
+}
+
+#playlist a.paused {
+  background:#333;
+}
+
+/* elements inside playlist entry */
+#playlist a.vitems img {
+    border:0;
+    float:left;
+    margin-right:10px;
+}
+
+#playlist a.vitems strong {
+    padding-bottom:5px;
+}
+
+#playlist a.vitems em {
+    border:0;
+    float:left;
+    margin-right:10px;
+    background:url(/sites/all/themes/bmj/bmj/images/flowplayer/clock.gif) no-repeat 0 50%;
+    padding-left:20px;
+    color:#333;
+    font-style:normal;
+    margin-top:10px;
+}
+
+/* middle video pane */
+a.videoplayer2 img {
+    border:0px;
+    margin-top: 90px;
+}
+.mvideo {
+    display:block;
+    float:left;
+
+}

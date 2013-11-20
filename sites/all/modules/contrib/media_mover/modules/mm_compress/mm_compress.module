@@ -1,0 +1,138 @@
+<?php
+
+
+/**
+ * @file
+ * Provides compress and decompress functionality
+ *
+ * @NOTE: much of this can probably be removed in D7 because of
+ *        the utilities that are baked in
+ */
+
+
+/**
+ * Implements hook_archive_info_alter().
+ *
+ * @param array $info
+ */
+function mm_compress_archiver_info_alter(&$info) {
+  $info['zip']['class'] = 'ArchiverZipMediaMover';
+  $info['tar']['class'] = 'ArchiverTarMediaMover';
+}
+
+
+/**
+ * Implements hook_media_mover().
+ *
+ * @return array
+ */
+function mm_compress_media_mover() {
+  $items = array();
+  $items['compression'] = array(
+    'description' => t('Transform: compress file'),
+    'callback' => 'mm_compress_compress',
+    'configuration' => 'mm_compress_compress_config',
+  );
+  $items['decompression'] = array(
+    'description' => t('Transform: decompress file'),
+    'callback' => 'mm_compress_decompress',
+    'configuration' => 'mm_compress_decompress_config',
+  );
+  return $items;
+}
+
+
+/**
+ * Creates the configuration form
+ *
+ * @param $step
+ *   object, media mover step
+ * @return array
+ */
+function mm_compress_compress_config($step) {
+  $form['mm_compress'] = array(
+    '#type' => 'fieldset',
+    '#title' => t('File Compression'),
+    '#description' => t('This compresses files with the a compression utility.'),
+    '#collapsed' => FALSE,
+  );
+  $form['mm_compress']['compress_type'] = array(
+    '#type' => 'select',
+    '#title' => t('Chose the compression type'),
+    '#options' => mm_compress_archivers(),
+    '#default_value' => $step->settings['compress_type']
+  );
+  return $form;
+}
+
+
+/**
+ * Creates the configuration form
+ *
+ * @param $step
+ *   object, media mover step
+ * @return array
+ */
+function mm_compress_decompress_config($step) {
+  $form['mm_decompress'] = array(
+    '#type' => 'fieldset',
+    '#title' => t('File decompress'),
+    '#description' => t('This will attempt to decompress a file. If the file is
+      not compressed or not a supported type, it will pass the file on. The
+      following types are supported: %types',
+      array('%types' => implode(', ', mm_compress_archivers()))
+      ),
+    '#collapsed' => FALSE,
+  );
+  return $form;
+}
+
+
+/**
+ * Runs the actual processing of the file
+ *
+ * @param $file
+ *   media mover file array
+ * @param $configuration
+ *   media mover configuration
+ * @return string
+ */
+function mm_compress_compress($step, &$file) {
+  // Create a temporary file for this archive
+  $path = file_create_filename(basename($file->uri) . '.' . $step->settings['compress_type'], 'temporary://');
+  // Use touch to stub the archive out before it is created. Note that touch()
+  // does not support streamwrappers however all files are assumed to be local
+  // for these compression tools
+  touch(drupal_realpath($path));
+  // Get the archiver
+  $archiver = archiver_get_archiver($path);
+  // The modified archiver classes support using local paths
+  $archiver->add(drupal_realpath($file->uri), TRUE);
+  // Return the path to the archive
+  return $path;
+}
+
+
+/**
+ * Run the decompression process
+ *
+ * @param $step
+ * @param $file
+ */
+function mm_compress_decompress($step, $file) {
+
+
+}
+
+
+/**
+ * Returns a list of binaries that are enabled
+ */
+function mm_compress_archivers() {
+  $enabled = array();
+  foreach (archiver_get_info() as $key => $value) {
+    $enabled[$key] = $key;
+  }
+  return $enabled;
+}
+

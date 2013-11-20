@@ -1,0 +1,1203 @@
+<?php
+/**
+ * @file
+ * Code for the HighWire - Template - Journal feature.
+ */
+
+include_once 'jnl_bmj.features.inc';
+include_once 'jnl_bmj.include.lookup.inc';
+include_once 'jnl_bmj.include.theme.inc';
+require_once 'jnl_bmj.class.d6DataLoader.inc';
+require_once 'jnl_bmj.class.LoadBookPages.inc';
+require_once 'jnl_bmj.class.LoadEletters.inc';
+require_once 'jnl_bmj.class.LoadPressRelease.inc';
+require_once 'jnl_bmj_migrate_users.inc';
+
+
+function jnl_bmj_preprocess_link(&$variables) {
+	if($variables['path'] == '<front>') {
+		$variables['path'] = url('theBMJ', array('absolute' => true));
+	}
+}
+
+function jnl_bmj_preprocess_page(&$vars) {
+  drupal_add_js(drupal_get_path('module', 'jnl_bmj') . '/js/bmj_oas.js');
+
+	$vars['front_page'] = url('theBMJ', array('absolute' => true));
+}
+
+
+function jnl_bmj_url_outbound_alter(&$path, &$options, $original_path) {
+	if($path == '<front>') {
+		$path = 'theBMJ';
+	}
+}
+
+
+/**
+ * This is example code for a Drupal 6 to Drupal 7 migration. This won't actually
+ * work without defining the referenced vocabularies, content types, and fields
+ * on each side.
+ */
+
+/**
+ * Implements hook_flush_caches().
+ */
+function jnl_bmj_flush_caches() {
+	jnl_bmj_register_migrations();
+}
+
+/**
+ * Register all D6->D7 migrations.
+ */
+function jnl_bmj_register_migrations() {
+	/**
+	 * Each migration being registered takes an array of arguments, some required
+	 * and some optional. Start with the common arguments required by all - the
+	 * source_connection (connection key, set up in settings.php, pointing to
+	 * the Drupal 6 database) and source_version (major version of Drupal).
+	 */
+	$common_arguments = array(
+			'source_connection' => 'bmj_d6',
+			'source_version' => 6,
+	);
+
+	$role_arguments = $common_arguments + array(
+  'machine_name' => 'BMJRoles',
+  'description' => t('Import Drupal 6 roles'),
+  'role_mappings' => array(
+    'BMJ collections editor' => 'BMJ collections editor',
+    'BMJ editor' => 'BMJ editor',
+    'BMJ manager' =>  'BMJ manager',
+    'BMJ preview' =>  'BMJ preview',
+    'Portal champion editor' => 'Portal champion editor',
+   ),
+  );
+
+  Migration::registerMigration('DrupalRole6Migration',
+  $role_arguments['machine_name'], $role_arguments);
+
+
+	// The description and the migration machine name are also required arguments,
+	// which will be unique for each migration you register.
+	$arguments = $common_arguments + array(
+			'description' => t('Migration of users from Drupal 6'),
+			'machine_name' => 'User',
+	    'role_migration' => 'BMJRoles',
+	);
+
+	// We just use the migrate_d2d D6 migration class as-is.
+	Migration::registerMigration('BMJMigrateUsers', $arguments['machine_name'],
+	$arguments);
+}
+
+/**
+ * Implements hook_migrate_api().
+ */
+function jnl_bmj_migrate_api() {
+	 $api = array(
+	 	'api' => 2,
+	 );
+ return $api;
+}
+
+
+
+/**
+ * Implementation of hook_ctools_plugin_dierctory() to let the system know
+ * we implement plugins.
+ */
+function jnl_bmj_ctools_plugin_directory($module, $plugin) {
+  return 'plugins/' . $plugin;
+}
+
+
+/**
+ * Implements hook_field_widget_form_alter
+ */
+function jnl_bmj_field_widget_form_alter(&$element, &$form_state, $context) {
+  if ($context['field']['type'] === 'nlmfield_contributor') {
+    $element['#collapsible'] = FALSE;
+    unset($element['string_name']);
+    unset($element['prefix']);
+    unset($element['suffix']);
+    unset($element['degrees']);
+    unset($element['contributor_type']);
+    $element['role']['#title'] = t('Occupation');
+    $element['other'] = array(
+      '#type' => 'textfield',
+      '#title' => t('Other Authors'),
+      // '#default_value' => nlmfield_process_bit('nlmfield_contributor', 'A', $xml),
+      '#description' => t("Optional list of other authors seperated by commas, e.g., 'Thomas Watson, Steven Green, Sue Blackmore")
+    );
+  }
+}
+
+/**
+ * Implements hook_form_alter
+ */
+function jnl_bmj_form_alter(&$form, &$form_state, $form_id) {
+  switch($form_id) {
+    case 'highwire_eletters_settings':
+      $bmj_eletter_options = array(
+        'field_highwire_c_response_to' => 'field_highwire_c_response_to',
+        'field_highwire_a_state' => 'field_highwire_a_state',
+        'field_highwire_c_subject' => 'field_highwire_c_subject'
+      );
+      $form['highwire_eletters_fields']['#options'] = array_merge($form['highwire_eletters_fields']['#options'], $bmj_eletter_options);
+    break;
+    case 'highwire_comment_node_form':
+      $required = array('#required' => 1);
+      $form['field_highwire_a_contributors'][X][0]['given_names']['#weight'] = 0;
+      $form['field_highwire_a_contributors'][X][0]['surname']['#weight'] = -1;
+      $form['field_highwire_a_contributors'][X][0]['given_names']['#required'] = 1;
+      $form['field_highwire_a_contributors'][X][0]['surname']['#required'] = 1;
+      $form['field_highwire_a_contributors'][X][0]['email']['#required'] = 1;
+      $form['field_highwire_a_contributors'][X][0]['role']['#required'] = 1;
+      $form['field_highwire_a_contributors'][X][0]['aff']['#required'] = 1;
+      $form['field_highwire_a_contributors'][X][0]['address']['#required'] = 1;
+      $form['actions']['preview']['#value'] = t('Preview Rapid Response');
+      $form['actions']['submit']['#value'] = t('Submit Rapid Response');
+
+      if ($form['nid']) {
+        // $form_state['action'] = 'node/' . $form['nid'];
+        // $form['actions']['submit']['#submit'][] = 'highwire_comment_node_form_submit';
+        $form['actions']['preview']['#ajax'] = array(
+          'wrapper' => 'highwire-comment-node-form',
+          'method' => 'replace',
+          'callback' => 'highwire_comment_node_form_build_preview'
+        );
+      }
+
+      if (!$form['nid']['#value']) {
+      // Node reference from URL
+        if(is_numeric(arg(1))) {
+          $response_node_nid = arg(1);
+          $rapid_response_node = node_load($response_node_nid);
+        }
+
+        if ($rapid_response_node !== FALSE) {
+          // Get parent article id.
+          $article_nid = $rapid_response_node->field_highwire_c_subject[X][0]['nid'];
+          $article_node = node_load($article_nid);
+
+          if ($rapid_response_node->type == "highwire_comment") {
+            $article_nid = $rapid_response_node->field_highwire_c_subject[X][0]['nid'];
+          }
+          else {
+            $article_nid = $rapid_response_node->nid;
+          }
+          $parent = node_load($article_nid);
+          // Parent nodereference.
+          $form['title']['#default_value'] = 'Re: ' . $parent->title;
+          $form['title']['#disabled'] = 1;
+        }
+      }
+    break;
+  }
+   if ($form_id == 'nodequeue_edit_queue_form') {
+
+    $countries = array_keys(jnl_bmj_country_portal_load_countries());
+    $qid = $form['qid']['#value'];
+    $default_value = variable_get('nodequeue_country_' . $qid . '_value', NULL);
+
+    $form['country'] = array(
+      '#type' => 'radios',
+      '#options' => drupal_map_assoc($countries),
+      '#default_value' => $default_value,
+      '#title' => t('Country'),
+      '#description' => "Select the country/countries associated with his nodequeue",
+      '#weight' => 1,
+    );
+
+    $form['#submit'][] = 'jnl_bmj_nodequeue_country_submit';
+    $form['submit']['#weight'] = 5;
+    $form[0]['#weight'] = 5;
+  }
+
+  if ('highwire_alerts_article_sign_up_form' == $form_id) {
+    $form['highwire_alerts_article_select_alert']['#title'] = '';
+    $form['highwire_alerts_article_select_alert']['#description'] = t('<b>Select each email alert type you wish to receive and a name for each alert.</b><br />The name will appear in the subject of your email alert messages.');
+    $form['highwire_alerts_article_select_alert']['frequency']['#prefix'] = '<div class = "bmj-add-alert-form">';
+    $form['highwire_alerts_article_select_alert']['frequency']['#suffix'] = '</div>';
+    $form['submit']['#value'] = t('Submit');
+  }
+
+}
+
+function jnl_bmj_nodequeue_country_submit($form, &$form_state) {
+
+  $qid = $form_state['values']['qid'];
+
+  if (isset($form_state['values']['country']) && !empty($form_state['values']['country'])) {
+    variable_set('nodequeue_country_' . $qid . '_value', $form_state['values']['country']);
+  }
+}
+
+/**
+ * Implements hook_theme
+ */
+function jnl_bmj_theme($existing, $type, $theme, $path) {
+  return array(
+    'bmj_bootstrap_button' => array(
+      'variables' => array('button_content' => NULL)
+    ),
+    'bmj_bootstrap_modal' => array(
+      'variables' => array('modal_id' => NULL, 'modal_label' => NULL, 'modal_header' => NULL, 'modal_body' => NULL, 'modal_footer' => NULL),
+      'template' => 'jnl_bmj_bootstrap_modal',
+      'path' => drupal_get_path('module', 'jnl_bmj') . '/templates'
+    ),
+    'bmj_bootstrap_dropdown' => array(
+      'variables' => array('links' => array()),
+    ),
+    'bmj_bootstrap_button_dropdown' => array(
+      'variables' => array('links' => array(), 'active_text' => NULL),
+      'template' => 'jnl_bmj_bootstrap_button_dropdown',
+      'path' => drupal_get_path('module', 'jnl_bmj') . '/templates'
+    ),
+    'bmj_comments_anchor_list' => array(
+      'variables' => array('node' => NULL, 'conf' => NULL)
+    ),
+    'bmj_comments_list' => array(
+      'variables' => array('node' => NULL, 'conf' => NULL)
+    ),
+    'bmj_response_archive' => array(
+      'variables' => array('node' => NULL),
+      'path' => drupal_get_path('module', 'jnl_bmj') . '/templates',
+      'template' => 'bmj_response_archive',
+    ),
+    'bmj_archive_video_abstracts' => array(
+      'variables' => array('video_link' => NULL, 'video_title' => NULL, 'video_desc' => NULL),
+      'path' => drupal_get_path('module', 'jnl_bmj') . '/templates',
+      'template' => 'bmj_archive_video_abstracts',
+    ),
+    'bmj_featured_citation' => array(
+      'variables' => array('node' => FALSE, 'mode' => "photo"),
+      'path' => drupal_get_path('module', 'jnl_bmj') . '/templates',
+      'template' => 'bmj_featured_citation',
+    ),
+    'bmj_category_links' => array(
+      'variables' => array('tids' => FALSE),
+    ),
+    'bmj_article_buttons' => array(
+      'variables' => array(
+        'node' => FALSE,
+        'conf' => FALSE,
+        'mode' => FALSE,  // article, hero, citation
+        'pdf' => FALSE,
+        'respond' => FALSE,
+        'share' => FALSE,
+        'read' => FALSE,
+      ),
+    ),
+    'bmj_issue_pager' => array(
+      'variables' => array('prev' => NULL, 'next' => NULL),
+    ),
+    'bmj_specialities_two_col' => array(
+      'variables' => array('children' => NULL, 'count' => NULL),
+      'path' => drupal_get_path('module', 'jnl_bmj') . '/templates',
+      'template' => 'bmj_specialities_two_col'
+    ),
+    'bmj_item_list_more_less' => array(
+      'variables' => array('items' => array(), 'title' => NULL, 'type' => 'ul', 'attributes' => array(), 'limit' => NULL, 'more-link' => array('title' => 'Show More', 'icon' => NULL), 'less-link' => array('title' => 'Show Less', 'icon' => NULL)),
+    ),
+    'bmj_admin_links' => array(
+      'variables' => array('node' => NULL),
+    ),
+    'bmj_content_type_issue_cover' => array(
+      'variables' => array('issue_cover' => NULL),
+    )
+  );
+}
+
+
+/**
+ * Implements hook_service_links_alter
+ */
+function jnl_bmj_service_links_alter(&$links) {
+  if (isset($links['forward'])) {
+    // Change the icon of MyService.
+    $links['forward']['name'] = 'Email to a Friend';
+  }
+}
+function jnl_bmj_permission(){
+  return array(
+    'administer bmj configuration' => array(
+      'title' => t('Administer BMJ admin configurations'),
+      'description' => t('Change BMJ admin configurations.'),
+    ),
+    'view bmj admin links' => array(
+      'title' => t('View BMJ admin links.'),
+      'description' => t('View quick links to edit node and add/remove node from nodequeus.'),
+    ),
+  );
+}
+
+
+/**
+ * Implements hook_menu
+ *
+ * @return array An array of new menu items added
+ */
+function jnl_bmj_menu() {
+  $items = array();
+
+  $items['admin/bmj'] = array(
+    'title' => 'BMJ Settings',
+    'description' => 'Adjust bmj settings.',
+    'page callback' => 'system_admin_menu_block_page',
+    'access arguments' => array('administer bmj configuration'),
+    'position' => 'left',
+    'file' => 'system.admin.inc',
+    'file path' => 'modules/system/',
+  );
+
+  $items['bmj/section-pdf/%node/%/%'] = array(
+    'title' => 'Download powerpoint',
+    'page callback' => 'bmj_filestream_issue_toc',
+    'page arguments' => array(2, 3, 4),
+    'access callback' => TRUE,
+    'type' => MENU_CALLBACK,
+  );
+//   $items['admin/bmj/settings'] = array(
+//     'title' => 'General BMJ Settings',
+//     'description' => 'Adjust highwire settings.',
+//     'page callback' => 'drupal_get_form',
+//     'page arguments' => array('bmj_admin_settings'),
+//     'access arguments' => array('administer bmj configuration'),
+//     'type' => MENU_NORMAL_ITEM,
+//   );
+
+  return $items;
+}
+
+function jnl_bmj_preprocess_bmj_bootstrap_button_dropdown(&$variables) {
+
+  $variables['links'] = theme('bmj_bootstrap_dropdown', array('links' => $variables['links'],
+    'attributes' => $variables['attributes']));
+}
+
+function theme_bmj_bootstrap_dropdown(&$variables) {
+  $variables['links']['attributes']['class'][] = $variables['attributes']['class'][0];
+  $variables['links']['attributes']['class'][] = 'dropdown-menu';
+
+
+  return theme('links', $variables['links']);
+
+}
+
+/**
+ * Returns html for List of links for downloading citations
+ * @param  $variables
+ *         An associative array containing:
+ *         -coins_url : coin urls
+ *         -export_links
+ *            An associative array containing :
+ *            title: name of the exportable citation
+ *            href: link for download
+ *         -title : title
+ *         -conf  : settings for citation
+ */
+function jnl_bmj_preprocess_highwire_citation_export(&$variables) {
+  // Make a new empty "block" which will be a Pane you can add to your Panel.
+  module_load_include('inc', 'highwire_citation', 'highwire_citation_coins');
+
+  $node = $variables['node'];
+  $conf = $variables['conf'];
+
+  $citation_url = "highwire/citation/" . $node->nid . "/";
+  $export_link = $attributes = array();
+  $attributes['attributes'] = array('class' => array('citation-link btn btn-primary pull-right'));
+
+  $export_links[] = 'BibTeX (win & mac)' . l('Download', $citation_url . 'bibtex', $attributes);
+  $export_links[] = 'EndNote (tagged)' . l('Download', $citation_url . 'tagged', $attributes);
+  $export_links[] = 'EndNote 8 (xml)' . l('Download', $citation_url . 'endnote8', $attributes);
+  $export_links[] = 'RefWorks Tagged (win & mac)' . l('Download', $citation_url . 'refworks', $attributes);
+  $export_links[] = 'RIS (win only)' . l('Download', $citation_url . 'ris', $attributes);
+  $export_links[] = 'Medlars' . l('Download', $citation_url . 'medlars', $attributes);
+
+  $variables['coins_url'] = highwire_citation_build_coins_url($node);
+  $variables['links_title'] = '';
+
+  // Add content in a render array.
+  $variables['content']['citation'] = array(
+    '#markup' => theme('highwire_article_citation', array('node' => $node, 'conf' => $conf)),
+  );
+  $variables['content']['coins_url'] = array(
+    '#markup' => $variables['coins_url'],
+  );
+  $variables['content']['links'] = array(
+    '#theme' => 'item_list',
+    '#items' => $export_links,
+    '#title' => '',
+    '#type' => 'ul',
+    '#attributes' => array(
+      'class' => array('bmj-citation-links'),
+    ),
+  );
+  if ($variables['inline'] == 'inline') {
+    $variables['content']['links']['#attributes']['class'][] = 'inline';
+  }
+}
+
+/**
+ * Preprocess for bmj_response_archive
+ */
+function jnl_bmj_preprocess_bmj_response_archive(&$vars) {
+  $response_node = $vars['node'];
+  $vars['show_parent_info'] = TRUE;
+  $parent = node_load($response_node->field_highwire_c_subject[X][0]['nid']);
+  $vars['parent'] = $parent;
+  $parent_authors = array();
+  $i = 0;
+
+  if ($parent->field_highwire_article_authors) {
+    foreach ($parent->field_highwire_article_authors[X] as $key => $author) {
+      if ($i > 4) {
+        $parent_authors[] = 'et al';
+        break;
+      }
+      $parent_authors[] = $author['value'];
+      $i++;
+    }
+  }
+  $vars['parent_authors']     = (count($parent_authors)) ? check_plain(implode(', ', $parent_authors).'.') : '';
+  $vars['parent_volume']      = check_plain($parent->field_highwire_a_vol_num[X][0]['value']);
+  $vars['parent_doi']         = check_plain($parent->field_highwire_a_doi[X][0]['value']);
+  $vars['parent_unpub_class'] = '';
+  $vars['parent_unpub_text']  = '';
+  if ($parent->status == 0) {
+    $vars['parent_unpub_class'] = 'node-unpublished ';
+    $vars['parent_unpub_text']  = ' (Unpublished) ';
+  }
+  $date = $response_node->field_highwire_a_epubdate[X][0]['value'];
+  $vars['formated_date'] = date('j F Y', strtotime($date));
+
+  $text = check_markup($response_node->field_highwire_c_response_body[X][0]['value'], $response_node->field_highwire_c_response_body[X][0]['format'], FALSE);
+  $vars['text'] = $text;
+
+  $out = array();
+
+  foreach ($response_node->field_highwire_a_contributors[X] as $key => $author) {
+    $out[] = '<strong>' . $author['name_given'] . ' ' . $author['name_sur'] . '</strong>' . $author['aff'];
+  }
+
+  $vars['authors'] = implode(', ', $out);
+  $vars['state'] = strtolower(preg_replace('/[^a-zA-Z0-9]/', '', $vars['node']->field_highwire_a_state[X][0]['value']));
+  $vars['title'] = l($response_node->title, 'node/'.$response_node->nid, array('html' => TRUE));
+  $vars['parent_link'] = l($parent->title, 'node/' . $parent->nid);
+}
+
+/*
+ * Preprocess variables for bmj_channel_feature
+ *
+ * @param $vars
+ *   an associatiave array containing:
+ *    node - The node object of the article to be displayed.
+ *    mode - Which display to render,
+ *      possible options: hero, photo, editors_choice
+ */
+function jnl_bmj_preprocess_bmj_featured_citation(&$vars) {
+  if (!$vars['node']) {
+    return FALSE;
+  }
+
+  else {
+    $node = $vars['node'];
+  }
+
+  if (isset($vars['mode']) && !empty($vars['mode'])) {
+    $mode = $vars['mode'];
+  }
+
+  else {  // EXIT if no $mode set.
+    return FALSE;
+  }
+
+  // Set all display flags to FALSE
+  $display = array(
+    'image' => FALSE,
+    'kicker' => FALSE,
+    'title' => FALSE,
+    'intro' => FALSE,
+    'date' => FALSE,
+    'category_links' => FALSE,
+  );
+
+  // Set flags for each display mode.
+  switch ($mode) {
+    case 'hero':
+      $display['image'] = TRUE;
+      $display['title'] = TRUE;
+      $display['intro'] = TRUE;
+      $display['date'] = TRUE;
+      $display['category_links'] = TRUE;
+      break;
+
+    case 'photo_featured':
+      $display['image'] = TRUE;
+      $display['title'] = TRUE;
+      $display['date'] = TRUE;
+      $display['category_links'] = TRUE;
+      break;
+
+    case 'editors_choice':
+      $display['image'] = TRUE;
+      $display['kicker'] = TRUE;
+      $display['test'] = TRUE;
+      $display['title'] = TRUE;
+      $display['date'] = TRUE;
+      break;
+
+    case 'homepage_slideshow':
+      $display['image'] = TRUE;
+      $display['title'] = TRUE;
+      $display['date'] = TRUE;
+      $display['category_links'] = TRUE;
+      $vars['more_link'] = l('read more', 'node/' . $node->nid, array(
+          'attributes' => array('class' => array('more-link')),
+        )
+      );
+      break;
+  }
+
+  $article_info = FALSE;  // Set a default value;
+  // Load additional article info for the node.
+  if (isset($node->field_bmj_additional_article_inf['und'][0]['target_id'])
+    && !empty($node->field_bmj_additional_article_inf['und'][0]['target_id'])) {
+    $article_info = jnl_bmj_get_additional_article_info($node->field_bmj_additional_article_inf['und'][0]['target_id']);
+  }
+
+  //  Article image.
+  if ($display['image']) {
+    if (isset($article_info->field_bmj_article_image['und'][0]['uri'])
+      && !empty($article_info->field_bmj_article_image['und'][0]['uri'])) {
+      // Image Style - based on $mode
+      switch ($mode) {
+        case 'hero':
+          $image_style = 'hero';
+          break;
+
+        case 'photo_featured':
+          $image_style = 'channel_photo_featured';
+          break;
+
+        case 'editors_choice':
+          $image_style = 'sub_menu_photo';
+          break;
+
+        case 'homepage_slideshow':
+          $image_style = 'homepage_slide';
+          break;
+      }
+
+      $vars['image'] = theme('image_style', array(
+        'style_name' => $image_style,
+        'path' => $article_info->field_bmj_article_image['und'][0]['uri'],
+        'attributes' => array(
+          'class' => array('bmj-'. $mode . '-image'),
+        ),
+      ));
+    }
+  }
+
+  else {
+    $vars['image'] = FALSE;
+  }
+
+  // Title
+  if ($display['title']) {
+    $title = jnl_bmj_get_display_title($node, $article_info);
+    $vars['title'] = l($title, 'node/' . $node->nid, array(
+        'attributes' => array('class' => array('bmj-' . $mode . '-title-link')),
+      )
+    );
+  }
+
+  else {
+    $vars['title'] = FALSE;
+  }
+
+  if ($display['kicker']) {
+    switch ($mode) {
+      case 'editors_choice':
+        $vars['kicker'] =  'Editors Choice';
+        break;
+    }
+  }
+
+  else {
+    $vars['kicker'] =  FALSE;
+  }
+
+  if ($display['intro']) {
+    // Article intro
+    if (isset($article_info->field_bmj_article_intro['und'][0]['value'])
+      && !empty($article_info->field_bmj_article_intro['und'][0]['value'])) {
+      $vars['intro'] = $article_info->field_bmj_article_intro['und'][0]['value'];
+    }
+  }
+
+  else {
+    $vars['intro'] = FALSE;
+  }
+
+  // Article Date (epub)
+  if ($display['date']) {
+    if (isset($node->field_highwire_a_epubdate['und'][0]['value'])
+      && !empty($node->field_highwire_a_epubdate['und'][0]['value'])) {
+      $vars['date'] = format_date(strtotime($node->field_highwire_a_epubdate['und'][0]['value']),
+        'custom', 'j F Y');
+    }
+  }
+  else {
+    $vars['date'] = FALSE;
+  }
+
+  // Category Links
+  if ($display['category_links']) {
+    if (isset($node->field_highwire_article_category['und']) &&
+      !empty($node->field_highwire_article_category['und'])) {
+      $cat_ids = array();
+      $categories = $node->field_highwire_article_category['und'];
+
+      foreach ($categories as $category) {
+        $cat_ids[] = $category['tid'];
+      }
+
+      $vars['category_links'] = theme('bmj_category_links', array('tids' => $cat_ids));
+    }
+  }
+
+  else {
+    $vars['category_links'] = FALSE;
+  }
+}
+
+/**
+ * jnl_bmj_get_display_title
+ * Determines which title should displayed.
+ *
+ * Heirarchy: US Title (highest), Display Title, (node) Title
+ *
+ * @param $node
+ *   node - The node object of the article to be displayed.
+ *   article_info - The node object of an Additional Article Info node
+ *    associated with the parent node.  Passed as an parameter to keep the
+ *    number of times node_load is called per page.
+ *
+ * @return string
+ */
+function jnl_bmj_get_display_title($node, $article_info =  FALSE) {
+  if (!$node) {
+    return FALSE;
+  }
+
+  $title = $node->title;
+
+  if (!$article_info) {
+    // Load the additional article info node if it wasn't passed.
+    if (isset($node->field_bmj_additional_article_inf['und'][0]['target_id'])
+      && !empty($node->field_bmj_additional_article_inf['und'][0]['target_id'])) {
+      $article_info = jnl_bmj_get_additional_article_info($node->field_bmj_additional_article_inf['und'][0]['target_id']);
+    }
+  }
+
+  if (isset($article_info->field_bmj_display_title['und'][0]['value'])
+    && !empty($article_info->field_bmj_display_title['und'][0]['value'])) {
+    $title = $article_info->field_bmj_display_title['und'][0]['value'];
+  }
+
+  if (isset($article_info->field_bmj_us_title['und'][0]['value'])
+    && !empty($article_info->field_bmj_us_title['und'][0]['value'])) {
+    $title = $article_info->field_bmj_us_title['und'][0]['value'];
+  }
+
+  return $title;
+}
+
+/**
+ * jnl_bmj_get_additional_article_info
+ * Get the associated editorial content for an article.
+ *
+ * @param $article_info_id
+ *   The nid of the Additional Article Info node
+ *   $node->field_bmj_additional_article_inf['und'][0]['target_id']
+ */
+function jnl_bmj_get_additional_article_info($article_info_id = FALSE) {
+  if (!$article_info_id) {
+    return FALSE;
+  }
+
+  return node_load($article_info_id);
+}
+
+/**
+ * jnl_bmj_preprocess_bmj_category_links
+ * Preprocess variables for theme_bmj_category_links.
+ *
+ * Only pass terms with category type 'heading' to the theme function.
+ *
+ * @param $vars - an associative array containing:
+ *   tids:
+ *    an array of tids associated with the content.
+ */
+function jnl_bmj_preprocess_bmj_category_links(&$vars) {
+  if (!$vars['tids']) {
+    return FALSE;
+  }
+
+  //This is ugly, but it better than parsing the url
+  $panel = panels_get_current_page_display();
+  $channel = FALSE;
+
+  foreach ($panel->context as $key => $context) {
+    if(strpos($key, 'channel') !==  FALSE) {
+      $channel = $context->data;
+    }
+  }
+
+  $categories = taxonomy_term_load_multiple($vars['tids']);
+
+  //If there is channel at this point, it's from context
+  $channel_categories = jnl_bmj_channels_get_categories();
+  $array = array();
+  foreach ($channel_categories as $key => $chan_cats) {
+  	foreach ($chan_cats as $cat) {
+  		$array[$key][] = strtolower($cat);
+  	}
+  }
+
+  $channel_categories = $array;
+
+  $category_links = array();
+  foreach ($categories as $category) {
+    if (isset($category->field_highwire_article_cat_type)
+      && !empty($category->field_highwire_article_cat_type[X])) {
+
+      $category_types = $category->field_highwire_article_cat_type[X];
+
+      $category_ctype = 'display-plural';
+      if (!empty($category->field_highwire_article_cat_ctype)) {
+        $category_ctype = $category->field_highwire_article_cat_ctype[X][0]['value'];
+      }
+
+      foreach ($category_types as $category_type) {
+        if ($category_type['value'] == 'heading' && $category_ctype == 'display-plural') {
+
+        	//If we don't have a channel at this point, see if we can figure it out from the settings page
+        	if(!$channel) {
+
+        		foreach ($channel_categories as $key => $chan_cats) {
+        			if(in_array(strtolower($category->name), $chan_cats)) {
+        				$channel = $key;
+        				break;
+        			}
+        		}
+        	}
+
+        	if(!$channel) continue;
+        	if(!in_array(strtolower($category->name), $channel_categories[$channel])) continue;
+          $category_links[]  =  l($category->name, 'more/'.$channel . '/'.drupal_html_class($category->name) .'/' . $category->tid);
+
+          //Add country links
+          if(!empty($vars['node']->field_bmj_additional_article_inf)) {
+            $article_info = node_load($vars['node']->field_bmj_additional_article_inf[X][0]['target_id']);
+            if(!empty($article_info->field_bmj_countries)) {
+              $countries = jnl_bmj_country_portal_load_countries();
+              foreach ($article_info->field_bmj_countries[X] as $ctids) {
+                foreach ($countries as $country) {
+                  if($country['bmj_country_term']->tid == $ctids['tid']) {
+                    $category_links[] = l($country['title'], 'more/'.$channel . '/'.drupal_html_class($category->name) .'/' . $category->tid . '/' . $country['bmj_country_code']);
+                  }
+                }
+              }
+
+            }
+          }
+
+          $channel = false;
+          break;
+        }
+      }
+    }
+  }
+
+
+
+  $vars['category_links'] = $category_links;
+}
+
+function theme_bmj_category_links($vars) {
+  return implode(', ', $vars['category_links']);
+}
+
+function jnl_bmj_preprocess_bmj_article_buttons(&$vars) {
+  if (!$vars['node'] || !$vars['mode']) {
+    return FALSE;
+  }
+
+  $article_node = $vars['node'];
+  $mode = $vars['mode'];
+  $conf = $vars['conf'];
+
+  // Set a default value for all display option flags.
+  $display = array(
+    'related' => FALSE, // the + button, displays a popup.
+    'pdf' => FALSE,
+    'respond' => FALSE,
+    'share' => FALSE,
+    'read' => FALSE,
+  );
+
+  //  Assign buttons that appear in the mode to TRUE
+  switch ($mode) {
+    case 'article':
+      $display['pdf'] = TRUE;
+      $display['respond'] = TRUE;
+      $display['share'] = TRUE;
+      break;
+
+    case 'hero':
+      $display['related'] = TRUE;
+      $display['respond'] = TRUE;
+      $display['read'] = TRUE;
+      break;
+
+    case 'citation':
+      $display['respond'] = TRUE;
+      break;
+  }
+
+  drupal_add_js(drupal_get_path('module', 'jnl_bmj') . '/js/bmj_bootstrap_popover.js');
+  drupal_add_js(array('jnl_bmj' => array('container_id_share' => $conf['container_id_share'], 'container_id_response' => $conf['container_id_response'])), 'setting');
+
+  if ($display['related']) {
+    $vars['related'] = l('<span class="icon"><i class="bmj-icon blue-icon icon-plus-sign"></i>+</span>', '#', array('html' => TRUE, 'attributes' => array('title' => 'More on this topic', 'class' => array('btn'))));
+  }
+
+  if (($display['related']) && ($mode == "hero")) {
+    $vars['related'] = l('<span class="icon"><i class="bmj-icon blue-icon icon-plus-sign"></i>+</span>', 'node/' . $article_node->nid, array('query' => array('tab' => 'responses'), 'html' => TRUE, 'attributes' => array('title' => 'More on this topic', 'class' => array('btn'))));
+  }
+
+  if ($display['pdf']) {
+    $pdf_path = url('node/'. $article_node->nid) . '.full.pdf+html';
+    $vars['pdf'] = l('<span class="icon"><i class="bmj-icon blue-icon icon-file-text"></i>PDF</span>', $pdf_path, array('external' => TRUE, 'html' => TRUE, 'attributes' => array('title' => 'PDF', 'class' => array('btn'))));
+  }
+
+  $comment_ids = highwire_get_comments($article_node->nid);
+  if (is_array($comment_ids)) {
+    $comment_count = count($comment_ids);
+  }
+
+  else {
+    $comment_count = 0;
+  }
+
+  // Don't display the Respond button on the citation if
+  // it doesn't have any comments.
+  if ($mode == 'citation' && $comment_count == 0) {
+    $display['respond'] = FALSE;
+  }
+
+  if (($display['respond']) && ($mode == "hero")) {
+    $vars['respond'] = l('<span class="icon"><i class="bmj-icon blue-icon icon-comment"></i>'.$comment_count.'</span>', 'node/' . $article_node->nid, array('query' => array('tab' => 'response-form'), 'attributes' => array('role' => 'button', 'id' => 'article-response', 'class' => array('btn'), 'data-toggle' => 'popover'), 'external' => TRUE, 'html' => TRUE));
+  }
+
+  if (($display['respond']) && ($mode != "hero")) {
+    $vars['respond'] = l('<span class="icon"><i class="bmj-icon blue-icon icon-comment"></i>'.$comment_count.'</span>', '', array('attributes' => array('role' => 'button', 'id' => 'article-response', 'class' => array('btn'), 'data-toggle' => 'popover'), 'fragment' => $conf['container_id_response'], 'external' => TRUE, 'html' => TRUE));
+  }
+  if ($display['share']) {
+    $vars['share'] = l('<span class="icon"><i class="bmj-icon blue-icon icon-share"></i>share</span>', '', array('attributes' => array('role' => 'button', 'id' => 'article-share', 'class' => array('btn'), 'data-toggle' => 'popover'), 'fragment' => $conf['container_id_share'], 'external' => TRUE, 'html' => TRUE));
+  }
+
+  if ($display['read']) {
+    $vars['read'] = l('<span class="icon">Read</span>', 'node/' . $article_node->nid, array('html' => TRUE, 'attributes' => array('title' => 'Read', 'class' => array('read-link'))));
+  }
+
+  $vars['display'] = $display;
+}
+
+function theme_bmj_article_buttons($vars) {
+  $output = '';
+  $displays = $vars['display'];
+
+  foreach ($displays as $display => $flag) {
+    if ($flag == TRUE) {
+      $output .= $vars[$display];
+    }
+  }
+
+  return $output;
+}
+
+/**
+ * Helper function to append 'c' to the colleciton name class
+ */
+function jnl_bmj_topic_colour_class($collection_name) {
+  return 'c-'. jnl_bmj_topic_text_to_class($collection_name);
+}
+
+/**
+ * Helper function to create pathauto based classname based on the collection term name
+ */
+function jnl_bmj_topic_text_to_class($text) {
+  module_load_include('inc', 'pathauto', 'pathauto');
+  return pathauto_cleanstring($text);
+}
+
+/**
+ * Returns HTML for pager.
+ * @param $variable
+ *    An associative array containing:
+ *    - 'prev' & 'next': associative arrays of link data, with the following:
+ *      - 'title': the link text.
+ *      - 'href': the link URL. If omitted, the 'title' is shown as a plain text item.
+ *      - 'html' (optional): Whether or not 'title' is HTML.
+ *      - 'attributes' (optional): Attributes for the anchor, or <span> tag if no href is supplied.
+ *      ** If href is passed, the entire link array will be passed as
+ *         the options variable to the l function.
+ *    - 'attributes': A keyed array of attributes for the div containing the pager links.
+ */
+function theme_bmj_issue_pager($variables) {
+  $link_data = array(
+    'prev' => isset($variables['prev']) ? $variables['prev'] : array(),
+    'next' => isset($variables['next']) ? $variables['next'] : array(),
+  );
+  $links = array();
+  $output = '';
+
+  foreach($link_data as $key => $data) {
+    $data['attributes']['class'][] = 'pager-link-' . $key;
+
+    if ($key == 'next' && isset($data['attributes']['data-font-icon'])) {
+      $data['attributes']['data-icon-position'] = 'after';
+    }
+    $data['attributes']['class'] = array('btn');
+    // If there's an href, generate output with l().
+    if (isset($data['href'])) {
+      $links[$key] = l($data['title'], $data['href'], $data);
+    }
+    // Otherwise print span if we have a title.
+    elseif (!empty($data['title'])) {
+      if (empty($data['html']) || $data['html'] == FALSE) {
+        $data['title'] = check_plain($data['title']);
+      }
+
+      $links[$key] = '<span' . drupal_attributes($data['attributes']) . '>' . $data['title'] . '</span>';
+    }
+  }
+
+  if (!isset($variables['attributes']['class'])) {
+    $variables['attributes']['class'] = array('pager', 'highwire-pager', 'pager-mini', 'clearfix');
+  } else {
+    array_unshift($variables['attributes']['class'], 'pager', 'highwire-pager', 'pager-mini', 'clearfix');
+  }
+
+  $output .= '<div' . drupal_attributes($variables['attributes']) . '>';
+  foreach($links as $key => $html) {
+    $output .= '<span class="pager-' . $key . '">' . $html . '</span>';
+  }
+  $output .= '</div>';
+
+  return $output;
+}
+
+function jnl_bmj_preprocess_toc_list(&$variables) {
+  // foreach($variables['items'] as $key => $item) {
+  //   unset($variables['items'][$key]['pdf']);
+  // }
+}
+
+function jnl_bmj_preprocess_bmj_specialities_two_col(&$variables) {
+  $counter = 0;
+  foreach($variables['children'] as $child) {
+    $link_class = jnl_bmj_topic_colour_class($child->name);
+    $option['attributes'] = array('class' => array($link_class));
+    if ($counter >= ($variables['count'] / 2)) {
+      $col2[] = l($child->name, 'taxonomy/term/' . $child->tid, $option);
+    }
+    else {
+      $col1[] = l($child->name, 'taxonomy/term/' . $child->tid, $option);
+    }
+    $counter++;
+  }
+  $variables['col1'] = $col1;
+  $variables['col2'] = $col2;
+}
+
+function jnl_bmj_views_api() {
+  return array(
+    'api' => 3
+  );
+}
+
+/**
+ * Auxiliary function to reduce duplicate sections
+ */
+function _toc_normalize_data($data) {
+  $new_data = array();
+  foreach($data as $section){
+    $items = array();
+    foreach ($section['items'] as $value) {
+      $items[] = $value;
+    }
+    $section['items'] = $items;
+    $add = TRUE;
+    foreach($new_data as &$section_tmp){
+      if ($section_tmp['heading'] == $section['heading']){
+        $section_tmp['items'] = array_merge($section['items'], $section_tmp['items']);
+        $add = FALSE;
+      }
+    }
+    if ($add)
+      $new_data[] = $section;
+  }
+  return $new_data;
+}
+
+/* Returns HTML for citation admin links.
+ * @param $vars
+ *    An associative array containing:
+ *      - node: the node object to derive admin links for.
+ */
+function theme_bmj_admin_links($vars) {
+  if (!$vars['node']) {
+    return FALSE;
+  }
+
+  if (!user_access('view bmj admin links')) {
+    return FALSE;
+  }
+
+  $node = $vars['node'];
+  $qids = nodequeue_get_qids($node->type);
+  $keys = array_keys($qids);
+
+  $queues = nodequeue_load_queues($keys);
+  $queues_available = nodequeue_get_subqueues_by_node($queues, $node);
+
+  $country = jnl_bmj_country_portal_get_active_country();
+  foreach ($queues_available as $queue) {
+    $queue_country = variable_get('nodequeue_country_' . $queue->qid . '_value', NULL);
+    if ($queue_country == $country['name']) {
+      $nodequeues[$queue->qid] = $queue;
+      $nodequeues[$queue->qid]->nodes = nodequeue_load_nodes($queue->qid);
+    }
+  }
+
+  // Generate the links for 'Add/Remove to nodequeue'
+  $links = array();
+  $links[] = l('Edit this item', current_path(), array(
+      'fragment' => 'overlay=node/' . $node->nid . '/edit'));
+
+  foreach ($nodequeues as $nodequeue) {
+    foreach ($nodequeue->nodes as $queue_node) {
+      // If the node is in the queue, add link to 'Remove from' queue.
+      if ($queue_node->nid == $node->nid) {
+        $links[] = l('Remove from ' . $nodequeue->title, 'nodequeue/' . $nodequeue->qid . '/remove-node/' . $nodequeue->sqid . '/' . $node->nid,
+          array(
+            'query' => nodequeue_get_query_string($node->nid, TRUE, array('tab' => '1')),
+          )
+        );
+      }
+      //  If the node is NOT in the queue, add link to 'Add to' queue.
+      else {
+        $links[] = l('Add to ' . ' ' . $nodequeue->title, 'nodequeue/' . $nodequeue->qid . '/add-node/' . $nodequeue->sqid . '/' . $node->nid,
+          array(
+            'query' => nodequeue_get_query_string($node->nid, TRUE, array('tab' => '1')),
+          )
+        );
+      }
+    }
+  }
+
+
+  $output = '<div class="btn-group bmj-admin-links">';
+  $output .= '<button type="button" class="btn btn-default dropdown-toggle" data-toggle="dropdown">
+    <span class="caret"></span>
+    </button>';
+  $output .= '<ul class="dropdown-menu dropdown-admin-links" role="menu">';
+
+  foreach ($links as $link) {
+    $output .= '<li>' . $link . '</li>';
+  }
+
+  $output .= '</ul>';
+  $output .= '</div>';
+  return $output;
+}
+
+function highwire_comment_node_form_build_preview($form, $form_state) {
+  $node = node_form_submit_build_node($form, $form_state);
+  $form_state['node_preview'] = node_preview($node);
+  $form_state['rebuild'] = TRUE;
+  return $form;
+}
+
+/**
+ * [bmj_filestream_issue_toc description]
+ * @param  [type]  $node   [description]
+ * @param  [type]  $toc_id [description]
+ * @param  boolean $embed  [description]
+ * @return [type]          [description]
+ */
+function bmj_filestream_issue_toc($node, $toc_id, $embed = FALSE) {
+  $tocs = unserialize($node->field_highwire_issue_toc_data[X][0]['value']);
+  $pisa_id = $node->field_highwire_a_pisa_id[X][0]['value'];
+  $apath = $node->field_highwire_a_apath[X][0]['value'];
+  $jcode = $node->field_highwire_a_jcode[X][0]['value'];
+  $variant_req_rec = 'section-pdf';
+
+  foreach ($tocs as $toc) {
+    if($toc['id'] == $toc_id){
+      if(!$toc['pdf']){
+        drupal_not_found();
+        exit;
+      }
+
+      // Check AC by checking AC of first article in TOC section
+      $proxy_nid = highwire_nid_from_apath($toc['items'][0]);
+      $proxy_node = node_load($proxy_nid);
+      if (!highwire_ac_authenticate_node($proxy_node, 'full')) {
+        if (module_exists('highwire_log')) {
+          highwire_log('reprint', $pisa_id, $apath, $jcode, $variant_req_rec, FALSE);
+        }
+        drupal_access_denied();
+      }
+      $url = $toc['pdf'];
+    }
+  }
+  // dprint_r($url);
+  if(!$url){
+    drupal_not_found();
+    exit;
+  }
+
+  if (module_exists('highwire_log')) {
+    highwire_log('reprint', $pisa_id, $apath, $jcode, $variant_req_rec, $variant_req_rec, $ac_info);
+  }
+
+  $filename = explode('/', $url);
+  $filename = end($filename);
+  highwire_file_serve_stream($url, $embed, $filename);
+}
+
+/**
+ * Implements hook_node_view
+ *
+ * @param  stdclass $node      Node being viewed
+ * @param  String $view_mode  Display mode in which the node is being viewed
+ * @param  String $langcode  Language code to signify the language of the content
+ */
+function jnl_bmj_node_view($node, $view_mode, $langcode) {
+  $path = explode('/', $_GET['q']);
+  $nid = end($path);
+  if (intval($nid)) {
+    $current_node = node_load($nid);
+  }
+
+  if (($current_node->type == "highwire_comment") && (isset($current_node->field_highwire_c_subject[X]))) {
+    drupal_goto("node/" . $node->field_highwire_c_subject[X][0]['nid'], array('query' => array('tab' => 'rapid-responses')), 301);
+  }
+}

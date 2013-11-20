@@ -1,0 +1,384 @@
+<?php
+
+/**
+ * @file
+ * Provides testing for Media Mover functions.
+ */
+
+class MediaMoverTestHelper extends DrupalWebTestCase {
+  protected $files = array();
+
+  function setUp($modules = array()) {
+    $modules[] = 'media_mover_api';
+    $modules[] = 'mm_test';
+    parent::setUp($modules);
+  }
+
+
+  /**
+   * Helper function to stub out a media mover configuration
+   *
+   * @return media_mover_configuration
+   */
+  function newMediaMoverTestConfiguration($id = FALSE) {
+    // Create a configuration
+    $configuration = new media_mover_configuration();
+    // Set basic data for the configuration
+    $configuration->cid = empty($id) ? time() + rand() : $id;
+    $configuration->module = 'mm_test';
+    $configuration->action = 'select';
+    $configuration->name = 'Media Mover test';
+    $configuration->description = 'Media Mover test configuration';
+    return $configuration;
+  }
+
+
+  /**
+   * Helper function to stub out a media mover step
+   *
+   * @return media_mover_step
+   */
+  function newMediaMoverTestStep($sid) {
+    $build = array(
+      'module' => 'mm_test',
+      'action_id' => 'select',
+      'description' => 'Media Mover test step',
+      'sid' => $sid,
+    );
+    $step = new media_mover_step($build);
+    return $step;
+  }
+
+
+  /**
+   * Create a step that selects a file.
+   *
+   * @param string $cid
+   *   Configuration ID
+   *
+   * @return object
+   *   Media Mover step object.
+   */
+  function newMediaMoverStepSelect($configuration) {
+    $build = media_mover_api_actions_build_get(NULL, 'media_mover_api', 'directory_select');
+    $build['cid'] = $configuration->cid;
+    $build['sid'] = time() + rand();
+    $build['settings'] = array(
+      'path' => drupal_get_path('module', 'media_mover_api') . '/tests/test_files',
+      'file_types' => 'txt'
+    );
+    $step = new media_mover_step($build);
+    return $step;
+  }
+
+
+  /**
+   * Create a step that stores a file.
+   *
+   * @param object $configuration
+   *   Media Mover configuration
+   *
+   * @return object
+   *   Media Mover step object.
+   */
+  function newMediaMoverStepStore($configuration) {
+    $build = media_mover_api_actions_build_get(NULL, 'media_mover_api', 'directory_store');
+    $build['cid'] = $configuration->cid;
+    $build['sid'] = time() + rand();
+    $build['settings'] =  array('path' => file_directory_temp());
+    $step = new media_mover_step($build);
+    return $step;
+  }
+
+    /**
+   * Create a step that stores a file.
+   *
+   * @param object $configuration
+   *   Media Mover configuration
+   *
+   * @return object
+   *   Media Mover step object.
+   */
+  function newMediaMoverStepSource($configuration) {
+    $build = media_mover_api_actions_build_get(NULL, 'media_mover_api', 'source_file_reset');
+    $build['cid'] = $configuration->cid;
+    $build['sid'] = time() + rand();
+    $step = new media_mover_step($build);
+    return $step;
+  }
+
+}
+
+
+/**
+ * @file
+ * Provides simple tests
+ */
+class MediaMoverApiTest extends MediaMoverTestHelper {
+
+  /**
+   * Define tests.
+   */
+  public static function getInfo() {
+    // Note: getInfo() strings should not be translated.
+    return array(
+      'name' => 'Media Mover API tests',
+      'description' => 'Test to ensure that Media Mover\'s API functions as
+        specified.',
+      'group' => 'Media Mover',
+    );
+  }
+
+  /**
+   * Tests the creation and saving of a media mover creation object
+   */
+  function testMediaMoverConfiguration() {
+    $configuration = $this->newMediaMoverTestConfiguration();
+    $cid = $configuration->cid;
+
+    // Save a copy so that we can test against the API
+    $original = clone $configuration;
+    // Save the configuration
+    $configuration->save();
+    unset($configuration);
+    // Reload the configuration from the saved version
+    $configuration = new media_mover_configuration($cid);
+
+    // The new flag is set to false when a configuration has been saved
+    $this->assertTrue(empty($configuration->new), 'Configuration is saved
+      to the database.');
+    $this->assertTrue($configuration->name == $original->name ? TRUE : FALSE,
+      'Configuration names are saved correctly to the database.');
+    $this->assertTrue($configuration->description == $original->description ? TRUE : FALSE,
+      'Configuration description are saved to the database correctly.');
+
+    // Test to see if a configuration can be deleted.
+    $configuration->delete();
+    unset($configuration);
+    $configuration = new media_mover_configuration($cid);
+    $this->assertFalse(empty($configuration->new), 'Configuration can be deleted from the database.');
+  }
+
+
+  /**
+   * Test the media mover step api.
+   */
+  function testMediaMoverStep() {
+    $configuration = $this->newMediaMoverTestConfiguration();
+    $configuration->save();
+
+    $sid = time() + rand();
+    $step = $this->newMediaMoverTestStep($sid);
+    $step->cid = $configuration->cid;
+
+    // New steps should be flaged as true
+    $this->assertTrue(! empty($step->new), 'New steps can be created.');
+
+    $original = clone $step;
+
+    // Save returns true
+    $this->assertTrue($step->save() == 1 ? TRUE : FALSE, 'New steps can be saved.');
+
+    unset($step);
+    $step = new media_mover_step($sid);
+
+    $this->assertTrue($step->name == $original->name ? TRUE : FALSE,
+      'Step names are saved correctly to the database.');
+    $this->assertTrue($step->module == $original->module ? TRUE : FALSE,
+      'Steps save the correct module.');
+    $this->assertTrue($step->action_id == $original->action_id ? TRUE : FALSE,
+      'Steps save the correct action id.');
+
+    // Add the updated step to the configuration
+    // $configuration->steps[$step_order] = $step;
+    // $configuration->save();
+
+    // Test for step deletion
+    $step->delete();
+    unset($step);
+    $step = new media_mover_step($sid);
+    $this->assertTrue(! empty($step->new), 'Steps can be deleted.');
+  }
+
+
+  /**
+   * Test the media mover file api
+   */
+  function testMediaMoverFile() {
+    $file = new media_mover_file();
+
+    // The new flag is set to false when a configuration has been saved
+    $this->assertTrue($file->new, 'File is correctly flagged as new.');
+
+    // Create a path for this file. It would be better to move this file into
+    // the temporary director but it is unclear if that directory will always
+    // be writeable.
+    $test_file = drupal_get_path('module', 'media_mover_api') . '/tests/test_files/test_file.txt';
+
+    $file->uri = $test_file;
+    $this->assertTrue($file->save(), 'Saving file is successful');
+    $this->assertTrue(empty($file->new), 'Saved file is no longer new.');
+    $this->assertTrue($file->mmfid, 'Saved file has an ID.');
+    $this->assertTrue($file->uri == $file->source_uri, 'Source URI matches URI.');
+    $this->assertTrue(! empty($file->data['filesize']), 'Filesize is stored to the file settings');
+
+    // Stub a step out for testing data save
+    $sid = time() + rand();
+    $step = $this->newMediaMoverTestStep($sid);
+    $file->update_uri(TRUE, $step);
+    $data = $file->data_get('steps');
+    $this->assertTrue($file->uri == $data[$step->step_order]['result_uri'], 'File step URI is correct');
+
+    // Test lock status
+    $this->assertTrue($file->status == MMA_FILE_STATUS_READY, 'File status is correct');
+    $file->lock();
+    $this->assertTrue($file->locked(), 'File is lockable');
+    $this->assertTrue(! empty($file->lock_date), 'File has a lock date');
+
+    $file->unlock();
+    $this->assertTrue($file->status == MMA_FILE_STATUS_READY, 'File is unlockable');
+    $this->assertTrue(empty($file->lock_date), 'File\'s lock date is reset');
+
+    // Test file deletion
+    $file->delete();
+    $file = new media_mover_file($file->mmfid);
+    $this->assertTrue(empty($file->mmfid), 'Deleted file does not exist.');
+    $this->assertTrue(file_exists($test_file), 'Did not delete the source file');
+  }
+
+
+  /**
+   * Builds and runs a complete configuration
+   */
+  function testMediaMoverConfigurationRun() {
+    $test_filepath = drupal_get_path('module', 'media_mover_api') . '/tests/test_files/test_file.txt';
+
+    $configuration = $this->newMediaMoverTestConfiguration();
+    $cid = $configuration->cid;
+
+    // Add select and store steps.
+    $configuration->steps[] = $this->newMediaMoverStepSelect($configuration);
+    $configuration->steps[] = $this->newMediaMoverStepStore($configuration);
+
+    $configuration->save();
+    $configuration = new media_mover_configuration($cid);
+    $this->assertTrue(count($configuration->steps) == 2, 'Steps are saved to configuration');
+
+    $configuration->run();
+
+    $this->assert($configuration->file_selected($test_filepath), 'Test file has been correctly selected');
+
+    // Get the files created by this configuration
+    $files = $configuration->get_files();
+    // There is only one .txt file in the tests directory
+    $this->assert($configuration->file_count() == 1, 'Correct number of files were selected');
+    $this->assertTrue($test_filepath == $files[0]->source_uri, 'Source file was correctly found.');
+    $this->assertTrue(file_exists($files[0]->uri), 'File was created and moved');
+    $this->assertTrue($files[0]->status == MMA_FILE_STATUS_FINISHED, 'File status is set to finished');
+    $this->assertTrue(empty($files[0]->lock_date), 'Lock date has been removed from finished file');
+
+    // Delete all files associated with this configuration
+    $configuration->delete_files();
+
+    $files = $configuration->get_files();
+    $this->assertTrue($files[0]->status == MMA_FILE_STATUS_DELETED, 'Files set to deleted status');
+
+    // Run cron to force the queues to run
+    drupal_cron_run();
+    $files = $configuration->get_files();
+    // Configuration should have no more files
+    $this->assert(empty($files), 'Files are successfully deleted');
+
+    // @TODO delete the configuration, check to see if steps still exist
+  }
+
+
+  /**
+   * Builds and runs a complete configuration on Drupal queue workers
+   */
+  function testMediaMoverConfigurationCron() {
+    $test_filepath = drupal_get_path('module', 'media_mover_api') . '/tests/test_files/test_file.txt';
+    $configuration = $this->newMediaMoverTestConfiguration();
+    $configuration->steps[] = $this->newMediaMoverStepSelect($configuration);
+    $configuration->steps[] = $this->newMediaMoverStepStore($configuration);
+
+    // Create an additional storage step in a different location.
+    $step = $this->newMediaMoverStepStore($configuration);
+    $step->settings = array('path' => file_directory_temp() . '/store');
+    $configuration->steps[] = $step;
+
+    // Save the configuration.
+    $configuration->save();
+    // Reload the configuration.
+    $configuration = new media_mover_configuration($configuration->cid);
+
+    // Run cron to select files with the queue workers.
+    drupal_cron_run();
+    $files = $configuration->get_files();
+    $this->assertTrue($files[0]->status == MMA_FILE_STATUS_READY, 'Selected file has correct status.');
+    $this->assertTrue($files[0]->step_order == 1, 'Selected file has correct number of steps.');
+
+    // Run cron to force the queue workers to run.
+    drupal_cron_run();
+    $files = $configuration->get_files();
+    $this->assertTrue($files[0]->status == MMA_FILE_STATUS_READY, 'Selected file has correct status after cron run.');
+    $this->assertTrue($files[0]->step_order == 2, 'Selected file has correct number of steps after cron run.');
+
+    // Run cron to force the queue workers to run.
+    drupal_cron_run();
+    $files = $configuration->get_files();
+    $this->assertTrue($files[0]->status == MMA_FILE_STATUS_FINISHED, 'Selected file is completed.');
+    $this->assertTrue($files[0]->step_order == 3, 'Selected file has correct number of steps after cron run.');
+
+    // Delete the file.
+    $configuration->delete_files();
+    $files = $configuration->get_files();
+    $this->assertTrue($files[0]->status == MMA_FILE_STATUS_DELETED, 'File status is set to deleted.');
+
+    // Clear all files.
+    drupal_cron_run();
+    $files = $configuration->get_files();
+    $this->assertTrue(empty($files), 'Media Mover file successfully deleted with queue worker.');
+  }
+
+
+  /**
+   * Builds and runs a complete configuration on Drupal queue workers
+   */
+  function testMediaMoverConfigurationCFileStatus() {
+    $test_filepath = drupal_get_path('module', 'media_mover_api') . '/tests/test_files/test_file.txt';
+    $cid = time() + rand();
+    $configuration = $this->newMediaMoverTestConfiguration($cid);
+    $configuration->steps[] = $this->newMediaMoverStepSelect($configuration);
+
+    // Use the custom status step.
+    $sid = time() + rand();
+    $store = $this->newMediaMoverTestStep($sid);
+    $store->cid = $configuration->cid;
+    $store->module = 'mm_test';
+    $store->action_id = 'custom_status';
+    $configuration->steps[] = $store;
+
+    $configuration->save();
+    $configuration = new media_mover_configuration($cid);
+
+    // Run cron to select files with the queue workers
+    drupal_cron_run();
+    // Run cron to move files into first custom queue
+    drupal_cron_run();
+
+    $files = $configuration->get_files();
+    $this->assertTrue($files[0]->status == MM_TEST_STATUS_FIRST, 'File status is set to custom first correctly.');
+
+    // Run cron to move files into second custom queue
+    drupal_cron_run();
+    $files = $configuration->get_files();
+    $this->assertTrue($files[0]->status == MM_TEST_STATUS_SECOND, 'File status is set to custom second correctly.');
+
+    // Run cron to finish second queue
+    drupal_cron_run();
+    $files = $configuration->get_files();
+    $this->assertTrue($files[0]->status == MMA_FILE_STATUS_FINISHED, 'File status is set to finished correctly.');
+
+  }
+}

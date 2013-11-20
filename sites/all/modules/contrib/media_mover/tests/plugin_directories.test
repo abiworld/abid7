@@ -1,0 +1,49 @@
+<?php
+
+/**
+ * @files
+ * Provides testing for the source plugin.
+ */
+
+class MediaMoverPluginDirectories extends MediaMoverTestHelper {
+
+  /**
+   * Define tests.
+   */
+  public static function getInfo() {
+    // Note: getInfo() strings should not be translated.
+    return array(
+      'name' => 'Media Mover directories plugin test',
+      'description' => 'Test to ensure files can be selected and stored to directories.',
+      'group' => 'Media Mover',
+    );
+  }
+
+
+  /**
+   * Test the directories plugin.
+   */
+  function testMediaMoverConfigurationRun() {
+    $test_filepath = drupal_get_path('module', 'media_mover_api') . '/tests/test_files/test_file.txt';
+
+    // Create a configuration.
+    $configuration = $this->newMediaMoverTestConfiguration();
+    // Add select and store steps.
+    $configuration->steps[] = $this->newMediaMoverStepSelect($configuration);
+    $configuration->steps[] = $this->newMediaMoverStepStore($configuration);
+    $configuration->save();
+
+    // Run the configuration.
+    $configuration->run();
+
+    $this->assert($configuration->file_selected($test_filepath), 'Test file has been correctly selected');
+
+    // Get the processed file.
+    $file = array_pop($configuration->get_files());
+
+    // Check the start/finish URIs.
+    $this->assertTRUE(file_exists($file->uri), 'Processed file exists.');
+    $this->assertTRUE((strpos($file->uri, file_directory_temp()) === 0), 'File was stored correctly.');
+  }
+
+}

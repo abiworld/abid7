@@ -1,0 +1,406 @@
+<?php
+
+/**
+ * @file
+ * Provides integration with ffmpeg_wrapper module
+ */
+
+/* ************************************************ */
+/* DRUPAL hook functions                            */
+/* ************************************************ */
+
+/**
+ * Implements hook_help().
+ */
+function mm_ffmpeg_help($path, $arg) {
+  switch ($path) {
+    case 'admin/modules#description':
+      return t('Helper module for Media Mover. Allows users to convert video and image files');
+  }
+  return;
+}
+
+
+/* ************************************************ */
+/* Contrib hook functions                           */
+/* ************************************************ */
+
+/**
+ * Implements hook_media_mover().
+ *
+ * @return array
+ */
+function mm_ffmpeg_media_mover() {
+  $items = array();
+  $items['mm_ffmpeg_video_convert'] = array(
+    'description' => t('Transform: Convert file with FFmpeg'),
+    'callback' => 'mm_ffmpeg_video_convert',
+    'configuration' => 'mm_ffmpeg_video_convert_config',
+  );
+  $items['mm_ffmpeg_create_thumbnails'] = array(
+    'description' => t('Transform: Create thumbnails from a video file'),
+    'callback' => 'mm_ffmpeg_thumbnails',
+    'configuration' => 'mm_ffmpeg_thumbnails_config'
+  );
+  return $items;
+}
+
+
+/* ************************************ */
+/* Configuration Functions              */
+/* ************************************ */
+
+/**
+ * Builds the edit config form.
+ *
+ * @param $configuration is the current configuration array
+ * @return array
+ *   Drupal form array
+ */
+function mm_ffmpeg_video_convert_config($step) {
+  // Get the configuration form from ffmpeg_wrapper
+  return ffmpeg_wrapper_ui_configuration_form($step->settings);
+}
+
+
+/**
+ * Provides multiple thumbnail configuration
+ *
+ * @param object $step
+ *   Media mover step object
+ * @return array
+ *   Drupal form array
+ */
+function mm_ffmpeg_thumbnails_config($step) {
+  $frame_sizes = ffmpeg_wrapper_ui_frame_sizes();
+  $frame_sizes['other'] = t('Other');
+  $form['mm_thumbnails'] = array(
+    '#type' => 'fieldset',
+    '#title' => t('FFMpeg thumbnail configuration'),
+    '#description' => t('This uses ffmepg to create thumbnails.'),
+    '#collapsed' => FALSE,
+    '#element_validate' => array('mm_ffmpeg_thumbnails_config_validate'),
+  );
+  $form['mm_thumbnails']['thumbnailer_size'] = array(
+    '#type' => 'select',
+    '#title' => t('Thumbnail dimensions'),
+    '#options' => $frame_sizes,
+    '#default_value' => ! empty($step->settings['thumbnailer_size']) ? $step->settings['thumbnailer_size'] : '320x240',
+    '#description' => t('Thumbnailnailer image output dimensions for each thumbnail.'),
+    '#prefix' => '<div class="ffmpeg-wrapper-size">',
+    '#suffix' => '</div>',
+  );
+  $form['mm_thumbnails']['thumbnailer_size_other'] = array(
+     '#type' => 'textfield',
+    '#title' => t('Other'),
+    '#default_value' => ! empty($step->settings['thumbnailer_size_other']) ? $step->settings['thumbnailer_size_other'] : NULL,
+    '#description' => t('Dimensions of the thumbnail in the format 600x400.'),
+    '#prefix' => '<div class="ffmpeg-wrapper-size-other">',
+    '#suffix' => '</div>',
+    '#size' => 12,
+  );
+  $form['mm_thumbnails']['thumbnailer_time'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Thumbnail time'),
+    '#default_value' => ! empty($step->settings['thumbnailer_time']) ? $step->settings['thumbnailer_time'] : '00:00:02',
+    '#description' => t('Take the first/only thumbnail screen shot from this time, in the form <em>00:00:02</em>.'),
+  );
+  $form['mm_thumbnails']['multiple'] = array(
+    '#type' => 'fieldset',
+    '#title' => t('Multiple thumbnail generation options'),
+    '#description' => t('This uses ffmepg to create thumbnails.'),
+    // Expand if we are generating more then one thumbnail.
+    '#collapsible' => TRUE,
+    '#collapsed' => FALSE,
+  );
+  $options = array('number' => t('Specify quantity'), 'interval' => t('Specify interval'));
+  $form['mm_thumbnails']['multiple']['thumbnailer_type'] = array(
+    '#type' => 'select',
+    '#title' => t('Generate thumbnails'),
+    '#options' => $options,
+    '#default_value' => ! empty($step->settings['thumbnailer_type']) ? $step->settings['thumbnailer_type'] : 'number',
+    '#description' => t('Set the type of thumbnailing you wish to do. Choosing "Specify quantity" will generate a thumbnail every duration/X seconds for a total of X thumbnails. Choosing "Specify interval" will create a thumbnail every X number of seconds through the duration of the video.'),
+  );
+  $options = drupal_map_assoc(array(1, 5, 10, 15, 20, 30, 45, 60));
+  $options['other'] = t('Other');
+  $form['mm_thumbnails']['multiple']['thumbnailer_interval_setting'] = array(
+    '#type' => 'select',
+    '#title' => t('Quantity or interval'),
+    '#options' => $options,
+    '#default_value' => ! empty($step->settings['thumbnailer_interval_setting']) ? $step->settings['thumbnailer_interval_setting'] : 1,
+    '#description' => t('Select the value for the what kind of thumbnailing you want.'),
+    '#prefix' => '<div class="ffmpeg-wrapper-size">',
+    '#suffix' => '</div>',
+  );
+  $form['mm_thumbnails']['multiple']['thumbnailer_interval_setting_other'] = array(
+    '#type' => 'textfield',
+    '#size' => 4,
+    '#title' => t('Other quantity or interval'),
+    '#default_value' => ! empty($step->settings['thumbnailer_interval_setting_other']) ? $step->settings['thumbnailer_interval_setting_other'] : NULL,
+    '#description' => t('If you selected "Other" above then input your numeric value here.  Either in seconds or quanity.'),
+    '#prefix' => '<div class="ffmpeg-wrapper-size-other">',
+    '#suffix' => '</div>',
+  );
+  return $form;
+}
+
+
+/* ************************************ */
+/* Conversion Functions                 */
+/* ************************************ */
+
+/**
+ * Processes the incoming file
+ *
+ * @TODO test watermark
+ * 
+ * @param object $step
+ *   Media mover step object
+ * @param object $file
+ *   Media mover file object
+ *
+ * @return string
+ *   Output file uri
+ */
+function mm_ffmpeg_video_convert($step, &$file) {
+  // We need to make sure that this file is local.
+  if (! $local_filepath = media_mover_api_file_is_local($file->uri)) {
+    watchdog('mm_ffmpeg', 'FFmpeg can not process non-local file <a href="@url">!file</a>.',
+      array(
+        '!file' => $file->uri,
+        '@url' => url(MMA_MENU_PATH . "/file/$file->mmfid/edit"),
+      )
+    );
+    // Set error condition
+    return FALSE;
+  }
+  $log_link = $file->get_entity_link();
+  $log_variables = array(
+    '!file' => $file->uri,
+    '@url' => url(MMA_MENU_PATH . "/file/$file->mmfid/edit"),
+    '%local_path' => $local_filepath,
+  );
+
+  // first error check, make sure that we can decode  this kind of file
+  if (! ffmpeg_wrapper_can_decode($local_filepath)) {
+    $message = 'FFmpeg can not decode file <a href="@url">!file</a> (%local_path).';
+    watchdog('mm_ffmpeg', $message, $log_variables, WATCHDOG_ERROR, $log_link);
+    return FALSE;
+  }
+
+  // We need to strip off the last file extension and append the conversion
+  // type on the end.
+  // @TODO: need to also include a check that the destination does not exist
+  // (and increment name index until it does not exist)
+  // @TODO: perhaps we should insert name of the conversion/step to simplify
+  // differentiation... use tokens?
+  $filename = preg_replace("/\..*$/", '.' . $step->settings['output_type'], basename($file->uri));
+
+  $params = $step->settings;
+  $params['source'] = $local_filepath;
+  $params['destination'] = file_create_filename($filename, file_directory_temp());
+  $params['overwrite_output'] = TRUE;
+
+  // Run FFmpeg
+  $ffmpeg = ffmpeg_wrapper_convert_file($params);
+
+  if ($ffmpeg->errors) {
+    $message = 'FFmpeg failed to convert file <a href="@url">!file</a> (%local_path)<br />Errors: %errors<br />Command: %command';
+    $log_variables += array(
+      '%errors' => implode("\n", $ffmpeg->errors),
+      '%command' => $ffmpeg->command,
+    );
+    watchdog('mm_ffmpeg', $message, $log_variables, WATCHDOG_ERROR, $log_link);
+    return FALSE;
+  }
+
+  $file->fid = FALSE; // Notify Media mover API that the output file is a new file
+  return $params['destination'];
+}
+
+
+/**
+ * Create one or more thumbnails from a video
+ *
+ * @param object $step
+ *   Media mover step object
+ * @param object $file
+ *   Media mover file object
+ *
+ * @return string
+ *   Output file uri
+ */
+function mm_ffmpeg_thumbnails($step, $file) {
+  // We need to make sure that this file is local.
+  if (! $local_filepath = media_mover_api_file_is_local($file->uri)) {
+    watchdog('mm_ffmpeg', 'FFmpeg can not process non-local file <a href="@url">!file</a>.',
+      array(
+        '!file' => $file->uri,
+        '@url' => url(MMA_MENU_PATH . "/file/$file->mmfid/edit"),
+      )
+    );
+    return FALSE;
+  }
+  $log_link = $file->get_entity_link();
+  $log_variables = array(
+    '!file' => $file->uri,
+    '@url' => url(MMA_MENU_PATH . "/file/$file->mmfid/edit"),
+    '%local_path' => $local_filepath,
+  );
+
+  // Make sure that we can decode this kind of file
+  if (! ffmpeg_wrapper_can_decode($local_filepath)) {
+    $message = 'FFmpeg can not decode file <a href="@url">!file</a> (%local_path).';
+    watchdog('mm_ffmpeg', $message, $log_variables, WATCHDOG_ERROR, $log_link);
+    return FALSE;
+  }
+
+  $output_basedir = 'temporary://'; // @todo: use this method throughout, it will ensure that Drupal's tmp directory is used consistently
+
+  // Get the output size
+  $size = ($step->settings['thumbnailer_size'] == 'other') ? $step->settings['thumbnailer_size_other'] : $step->settings['thumbnailer_size'];
+
+  // Get the duration of the video in seconds
+  $file_duration = ffmpeg_wrapper_get_file_duration($local_filepath);
+
+  // Get the thumbnail interval value- either total number or interval time
+  $interval_setting = ($step->settings['thumbnailer_interval_setting'] == 'other') ? $step->settings['thumbnailer_interval_setting_other'] : $step->settings['thumbnailer_interval_setting'];
+
+  // If the video is too short we thumbnail the first frame only.
+  if ($file_duration <= $interval_setting) {
+    $thumb_interval = 1;
+    $total_thumbs = 1;
+  }
+  // Should we return a total number of images?
+  elseif ($step->settings['thumbnailer_type'] == 'number') {
+    $thumb_interval = intval($file_duration / $interval_setting);
+    $total_thumbs = $interval_setting;
+  }
+  // Should we return an image every interval
+  elseif ($step->settings['thumbnailer_type'] == 'interval') {
+    $thumb_interval = $interval_setting;
+    $total_thumbs = intval($file_duration / $interval_setting);
+  }
+
+  // Create each of the thumbnails
+  $return_uri = FALSE;
+  for ($i = 0; $i < $total_thumbs; $i++) {
+    // First thumbnail.
+    if ($i == 0) {
+      $thumbnail_time = $step->settings['thumbnailer_time'];
+    }
+    // Last thumbnail.
+    elseif ($i == $total_thumbs - 1) {
+      $thumbnail_time = gmdate("H:i:s", ($file_duration - 2));
+    }
+    // Rest of the thumbnails are on the interval.
+    else {
+      $thumbnail_time = gmdate("H:i:s", ($thumb_interval * $i));
+    }
+
+    // Create the output file name
+    $output_filename = drupal_basename($file->uri) . '.' . $i . '.jpg';
+    $output_filepath = media_mover_api_create_local_path($file->cid, $step->sid, $output_filename, $output_basedir);
+    if (!$output_filepath) {
+      watchdog('mm_ffmpeg', 'Failed to create directory %dir for thumbnails',
+        array('%dir' => $output_basedir . MMA_FILES_DIR . '/' . $file->cid . '/' . $step->sid), WATCHDOG_ERROR);
+      continue;  // keep trying for each thumbnail
+    }
+
+    // Create the thumbnail
+    if (mm_ffmpeg_thumbnail_create($local_filepath, $output_filepath, $thumbnail_time, $size, $log_variables, $log_link)) {
+      // Now we have a thumbnail, create a new media mover file
+      // $derivative_file = media_mover_api_file_create_derivative($file, $output_file);
+
+      // Now we have a thumbnail, create a new media mover derivative in the file object data
+      $file->data_set('derivatives', array($output_filepath));
+
+      // Only return the first successfully created thumbnail
+      if ($i == 0) {
+        $return_uri = $output_filepath;
+      }
+    }
+  }
+
+  $file->fid = FALSE; // Notify Media mover API that the output file is a new file
+  return $return_uri;
+}
+
+
+/**
+ * Utility function to create a single thumbnail.
+ *
+ * @param string $source
+ *   Source file path, local system
+ * @param string $output_file
+ *   Local filesystem path to the output file
+ * @param string $time
+ *   Timecode from where to capture the image from
+ * @param string $size
+ *   Image size to generate
+ * @param array $log_variables
+ *   Array of variables for system log
+ * @param string $log_link
+ *   Link to the media mover file for system log
+ *
+ * @return bool
+ */
+function mm_ffmpeg_thumbnail_create($source, $output_file, $time, $size = FALSE, $log_variables, $log_link = FALSE) {
+  // get input file
+  $options[] = '-i \'' . $source . '\'';
+  // set frame time and disable audio
+  $options[] = '-vframes 1 -ss \'' . $time . '\' -an';
+  // set codec
+  $options[] = '-vcodec mjpeg -f rawvideo';
+  // set the frame size if it is defined
+  if ($size) {
+    $options[] = '-s \'' . $size . '\'';
+  }
+  $options[] = '\'' . $output_file . '\'';
+
+  // Run the full command with no verbosity
+  $ffmpeg = ffmpeg_wrapper_run_command(implode(' ', $options), -1);
+
+  if ($ffmpeg->errors || !file_exists($output_file)) {
+    $message = 'FFmpeg failed to generate thumbnail %output from file <a href="@url">!file</a> (%local_path)<br />Errors: %errors<br />Command: %command';
+    $log_variables += array(
+      '%errors' => implode("\n", $ffmpeg->errors),
+      '%command' => $ffmpeg->command,
+      '%output' => basename($output_file),
+    );
+    watchdog('mm_ffmpeg', $message, $log_variables, WATCHDOG_ERROR, $log_link);
+    return FALSE;
+  }
+  return TRUE;
+}
+
+
+/**
+ * Validates the video frame size on the configuration formfor converting.
+ *
+ * @param array $element
+ * @param array $form_state
+ */
+function mm_ffmpeg_thumbnails_config_validate($element, &$form_state) {
+  // Do no validation if we are deleting the step.
+  if (isset($form_state['clicked_button']['#params']['step_order'])) {
+    // Make sure we handle translations.
+    $button_title = t('Remove step !step', array('!step' => $form_state['clicked_button']['#params']['step_order'] + 1));
+    if ($form_state['clicked_button']['#value'] == $button_title) {
+      return;
+    }
+  }
+  // Get the data for this module if it was called.
+  $values = $form_state['values'];
+  foreach ($element['#parents'] as $key) {
+    $values = $values[$key];
+  }
+  if (empty($values['thumbnailer_size_other'])) {
+    if ($values['thumbnailer_size'] == 'other') {
+      form_set_error(implode('][', $element['#parents']) . "][thumbnailer_size_other", t('Sorry, you have chosen "Other" for the thumbnail size but thumbnail size other is empty.  Please enter a thumbnail size.'));
+    }
+  }
+  elseif (! preg_match('/^\d+x\d+$/', $values['thumbnailer_size_other'])) {
+    form_set_error(implode('][', $element['#parents']) . "][thumbnailer_size_other", t('The size must be of the format 600x400 (width x height)'));
+  }
+}

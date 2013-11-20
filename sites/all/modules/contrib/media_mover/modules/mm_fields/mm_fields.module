@@ -1,0 +1,824 @@
+<?php
+
+/**
+ * @file
+ *
+ * This file implements Media Mover functions for Entities and Fields.
+ */
+
+
+/* ********************************************** */
+/* DRUPAL HOOKS                                   */
+/* ********************************************** */
+
+
+/**
+ * Implements hook_menu().
+ *
+ * @return array
+ */
+function mm_fields_menu() {
+  $items = array();
+  $items[MMA_MENU_PATH . '/settings/mm_fields'] = array(
+    'title' => 'Auto Run',
+    '#description' => t('Specify Media Mover configurations to automatically run on entities.'),
+    'access arguments' => array('administer media_mover'),
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('mm_fields_run_settings_form'),
+    'type' => MENU_LOCAL_TASK,
+  );
+  return $items;
+}
+
+
+/**
+ * Implements hook_entity_load().
+ */
+function mm_fields_entity_load($entities, $entity_type) {
+  $entity_info = mm_fields_supported_entity_types($entity_type);
+  if (!$entity_info) {
+    return;
+  }
+  foreach ($entities as $entity) {
+    $entity_id = $entity->{$entity_info['entity_key']};
+    $entity->media_mover = mm_fields_entity_files_get($entity_type, $entity_id);
+  }
+}
+
+/**
+ * Implements hook_entity_view().
+ */
+function mm_fields_entity_view($entity, $entity_type, $view_mode, $langcode) {
+  $entity_info = mm_fields_supported_entity_types($entity_type);
+  if (!$entity_info) {
+    return;
+  }
+  if ($view_mode == 'rss') {
+    return mm_fields_entity_files_rss_view($entity_type, $entity);
+  }
+
+  // Should we display any files?
+  if (user_access('view media mover files') && isset($entity->media_mover)) {
+    // Add media mover files to entity display
+    $entity->content['media_mover_files'] = array(
+      '#markup' => theme('mm_fields_files_view', array('files' => $entity->media_mover)),
+      '#weight' => 50,
+    );
+  }
+}
+
+/**
+ * Implements hook_entity_insert().
+ */
+function mm_fields_entity_insert($entity, $entity_type) {
+  $entity_info = mm_fields_supported_entity_types($entity_type);
+  if (!$entity_info) {
+    return;
+  }
+  $entity_id = $entity->{$entity_info['entity_key']};
+  // @TODO is this really needed? We need to have media mover configuration to rerun on the translated entity... there are other automated mechanisms (auto run, cron) to do that.
+  //mm_fields_entity_files_translation_insert($entity_type, $entity_id, $entity);
+}
+
+/**
+ * Implements hook_entity_presave().
+ */
+function mm_fields_entity_presave($entity, $entity_type) {
+// compared to hook_field_attach_presave(), this one has: $entity->is_new, $entity->timestamp, but fields have been saved.
+}
+
+/**
+ * Implements hook_field_attach_presave().
+ */
+function mm_fields_field_attach_presave($entity_type, $entity) {
+  $entity_info = mm_fields_supported_entity_types($entity_type);
+  if (!$entity_info) {
+    return;
+  }
+  $entity_id = $entity->{$entity_info['entity_key']};
+
+  _mm_fields_entity_presave($entity_type, $entity_id, $entity);
+  mm_fields_auto_run($entity_type, $entity_id, $entity);
+}
+
+/**
+ * Implements hook_entity_delete().
+ */
+function mm_fields_entity_delete($entity, $entity_type) {
+  $entity_info = mm_fields_supported_entity_types($entity_type);
+  if (!$entity_info) {
+    return;
+  }
+  // invoke MM modules here and delete files associated with this node
+  mm_fields_entity_files_delete($entity_type, $entity);
+}
+
+/**
+ * Implements hook_form_alter().
+ *
+ * @param string $form_id
+ * @param array $form drupal form array
+ */
+function mm_fields_form_alter(&$form, &$form_state, $form_id) {
+}
+
+
+/**
+ * Implements hook_form_FORM_ID_alter().
+ */
+function mm_fields_form_node_form_alter(&$form, &$form_state) {
+  // Add the media mover files edit form if this node has MM files
+  if (user_access('view media mover files')) {
+    mm_fields_files_edit_form($form);
+  }
+}
+
+
+/**
+ * Implements hook_permission().
+ */
+function mm_fields_permission() {
+  return array(
+    'view media mover files' => array(
+      'title' => t('view media mover files'),
+      'description' => t('View media mover files'),
+    ),
+  );
+}
+
+
+/**
+ * Implements hook_form_FORM_ID_alter().
+ *
+ * Alter the node deletion form to alert the user that they may delete MM content
+ *
+ * @param unknown_type $form
+ * @param unknown_type $form_state
+ * @param unknown_type $form_id
+ */
+function mm_fields_form_node_delete_confirm_alter(&$form, $form_state) {
+  // check if there is any media mover content
+  $node = $form['#node'];
+  if (isset($node->media_mover)) {
+    $files = array();
+    foreach ($node->media_mover as $cid => $mmfiles) {
+      foreach ($mmfiles as $mmfile) {
+        if (isset($mmfile->uri)) {
+          $files[] = basename($mmfile->uri);
+        }
+      }
+    }
+    $form['media_mover'] = array(
+      '#title' => t('Media Mover files'),
+      '#markup' => t('If you delete this node, you will also delete these Media Mover files: %files', array('%files' => implode(', ', $files))),
+    );
+    // @TODO add submit handler here
+  }
+}
+
+
+/**
+ * Implements hook_theme().
+ */
+function mm_fields_theme() {
+  return array(
+    'mm_fields_files_view' => array(
+      'variables' => array('files' => NULL),
+      'file' => 'mm_fields.theme.inc',
+    ),
+    'mm_fields_files_edit' => array(
+      'render element' => 'element',
+      'file' => 'mm_fields.theme.inc',
+    ),
+  );
+}
+
+
+/**
+ * Implements hook_theme_registery_alter().
+ */
+function mm_fields_theme_registry_alter(&$theme_registry) {
+  // We need to override all of the filefield theme functions
+  // so that a non-local URI can be used to display the file
+  $types = array(
+/*
+// @todo FIXME - these themes are not defined in Drupal 7 file.module. Need to update!
+    'filefield_file',
+    'filefield_formatter_default',
+    'filefield_formatter_url_plain',
+    'filefield_formatter_path_plain',
+    'filefield_item',
+*/
+  );
+
+  foreach ($types as $type) {
+    $theme_registry[$type]['function'] = str_replace('theme', 'theme_mm_fields', $theme_registry[$type]['function']);
+    // This mimics the value that gets set by filefield
+    $theme_registry[$type]['include files'][0] = './' . drupal_get_path('module', 'mm_fields') . '/mm_fields.formatter.inc';
+    $theme_registry[$type]['file'] = 'mm_fields.formatter.inc';
+  }
+}
+
+
+/* ********************************************** */
+/* Contrib Hooks                                  */
+/* ********************************************** */
+
+/**
+ * Implements hook_media_mover().
+ *
+ * @return array
+ */
+function mm_fields_media_mover() {
+  $items = array();
+  // We can only offer these if field.module is enabled
+  if (module_exists('field')) {
+    $items['mm_fields_entity_field_select'] = array(
+      'description' => t('Select: from a Field'),
+      'callback' => 'mm_fields_entity_field_select',
+      'configuration' => 'mm_fields_entity_field_select_config',
+      'select' => 1,
+      'file' => 'includes/mm_fields'
+    );
+    $items['mm_fields_entity_field_store'] = array(
+      'description' => t('Store: to a Field'),
+      'callback' => 'mm_fields_entity_field_store',
+      'configuration' => 'mm_fields_entity_field_store_config',
+      'delete' => 'mm_fields_entity_field_store_delete',
+      'file' => 'includes/mm_fields'
+    );
+    $items['mm_fields_entity_field_clear'] = array(
+      'description' => t('Clear a Field'),
+      'callback' => 'mm_fields_entity_field_clear',
+      'configuration' => 'mm_fields_entity_field_clear_config',
+      'file' => 'includes/mm_fields'
+    );
+  }
+  // Generic node functions
+  $items['set_node_status'] = array(
+    'description' => t('Node: set node publishing options'),
+    'configuration' => 'mm_fields_node_publishing_options_set_config',
+    'callback' => 'mm_fields_node_publishing_options_set',
+    'file' => 'includes/mm_fields.node'
+  );
+/* @todo: Not functional yet, will be merged into 'mm_fields_entity_field_store'
+  $items['save_as_node'] = array(
+    'description' => t('Store: save to a node'),
+    'configuration' => 'mm_fields_save_config',
+    'callback' => 'mm_fields_save',
+    'file' => 'includes/mm_fields.node'
+  );
+  $items['mm_fields_save_to_files'] = array(
+    'description' => t('Store: save as a Drupal file'),
+    'callback' => 'mm_fields_file_save',
+  );
+*/
+  return $items;
+}
+
+
+/* ********************************************** */
+/* FORM FUNCTIONS                                 */
+/* ********************************************** */
+
+/**
+ * Builds the settings form, used on MMA_MENU_PATH . '/mm_auto_run' and
+ * MMA_MENU_PATH . '/settings'
+ *
+ * @return array
+ */
+function mm_fields_run_settings_form($form, &$form_state) {
+  // build some description information
+  $form['auto_run'] = array(
+    '#type' => 'fieldset',
+    '#title' => t('Media Mover Auto Run'),
+    '#description' => t('Select which Media Mover configurations you would like to run automatically when a user creates or updates a node.
+      This will only work with configurations that select their data from nodes.
+      Note that by default, any enabled Media Mover configuration will be run each time Cron runs.'),
+    '#collapsible' => TRUE,
+  );
+
+  // get a list of all current MM configurations
+  $configurations = media_mover_api_configurations_load();
+  foreach ($configurations as $configuration) {
+    $options[$configuration->cid] = '<strong>' . l($configuration->name, MMA_MENU_PATH . '/configurations/' . $configuration->cid) . '</strong><br />' . $configuration->description;
+  }
+
+  if (empty($options)) {
+    return array(
+      'auto_run' => array(
+        '#markup' => t('There are no configurations in the system. Please !create one.', array('!create' => l(t('create'), MMA_MENU_PATH . '/add'))),
+      ),
+    );
+  }
+
+  $form['auto_run']['mm_fields_run_configs'] = array(
+    '#title' => t('Select the configurations to run'),
+    '#type' => 'checkboxes',
+    '#options' => $options,
+    '#default_value' => variable_get('mm_fields_run_configs', array()),
+  );
+
+  return system_settings_form($form);
+}
+
+/* ************************************************** */
+/* Node CRUD functions                                */
+/* ************************************************** */
+
+
+/**
+ * Adds media mover files on node_load
+ *
+ * Fetches files from files db for a specific node
+ * invokes media_mover fetch hook to get additional data that media mover
+ * modules may have saved in seperate tables regarding a node. Caches results
+ * so that invoke is not so painful
+ *
+ * @ingroup media_mover_files
+ * @param string $entity_type
+ *   Entity type
+ * @param int $entity_id
+ *   Entity id
+ * @param $status
+ *   Media mover file status for specific files, FALSE for all files
+ * @return array
+ *   Array of media mover file objects
+ */
+function mm_fields_entity_files_get($entity_type, $entity_id, $status = MMA_FILE_STATUS_FINISHED) {
+  $cache_name = $entity_type . '_files_' . $entity_id . ($status ? '_' . $status : '');
+  // Get data from the cache
+  $data = cache_get($cache_name, 'cache_media_mover');
+//@todo: Verify that cache is reset when appropriate
+  // We can haz cache?
+  if (!is_array($data)) {
+    $data = array();
+    $query = db_select('media_mover_files', 'mmf')
+      ->fields('mmf', array('mmfid', 'cid'))
+      ->condition('entity_type', $entity_type)
+      ->condition('entity_id', $entity_id);
+    if ($status) {
+      $query->condition('status', $status);
+    }
+    $query->orderBy('cid');
+    $result = $query->execute();
+    foreach ($result as $item) {
+      $data[$item->cid][$item->mmfid] = media_mover_api_mmfile_load($item->mmfid);
+    }
+    // Note that we cache data even if there are zero files
+    cache_set($cache_name, $data, 'cache_media_mover', CACHE_TEMPORARY);
+  }
+  return $data;
+}
+
+
+/**
+ * Deletes files associated with a specified node
+ *
+ * @param string $entity_type
+ *   Entity type
+ * @param int $entity_id
+ *   Entity id
+ */
+function mm_fields_entity_files_delete($entity_type, $entity) {
+  if (isset($entity->media_mover)) {
+    foreach ($entity->media_mover as $cid => $files) {
+      foreach ($files as $mmfid => $file) {
+        $file->delete();
+      }
+    }
+  }
+}
+
+
+/**
+ * Copy media mover data from an old node to a translated node.
+ *
+ * @param string $entity_type
+ *   Entity type
+ * @param int $entity_id
+ *   Entity id
+ * @param object $entity
+ *   Drupal entity object
+ */
+function mm_fields_entity_files_translation_insert($entity_type, $entity_id, $entity) {
+  if (isset($entity->translation_source)) {
+    $translation_source = $entity->translation_source;
+    if (isset($translation_source->media_mover)) {
+      foreach ($translation_source->media_mover as $cid => $files) {
+        foreach ($files as $mmfid => $data) {
+          $file = new media_mover_file();
+          $file->entity_type = $entity_type;
+          $file->entity_id = $entity_id;
+          foreach ((array) $data as $key => $value) {
+            if ($key = 'data' && is_array($value)) {
+              // Remove processing info...
+              // @todo: this should be media_mover_files method, $file->reset_processed().
+              unset($value['steps'], $value['derivatives']);
+            }
+            $file->{$key} = $value;
+          }
+          // make sure that we do not have a mmfid to save it as a new file
+          unset($file->mmfid);
+          $file->save();
+          watchdog('MM Node', 'Added Media Mover files to a translated node', array(), WATCHDOG_INFO);
+        }
+      }
+    }
+  }
+}
+
+
+/* ************************************************ */
+/* Media Mover: Media Mover action functions        */
+/* ************************************************ */
+
+
+/**
+ * Creates a new Drupal file
+ *
+ * Saves the Media Mover file to the Drupal files table
+ * and returns the Drupal files table path
+ *
+ * @param object $step
+ *   Media mover step object
+ * @param object $file
+ *   Media mover file object
+ * @return string
+ *   New file uri
+ */
+function mm_fields_file_save($step, $file) {
+  $new_file = mm_fields_save_drupal_file($step, $file);
+  return $new_file->uri;
+}
+
+
+/**
+ * Saves the MM file to the drupal file table. Slightly customized version
+ * to avoid using upload_save and file_save_upload.
+ * @param object $step
+ *   media mover step object
+ * @param object $file
+ *   media mover file object
+ * @param int $uid
+ * @param string $destination
+ *   set the destination directory of the file
+ * @return object
+ *   drupal file data object
+ */
+ // @todo: (will be) UNUSED, remove.
+function mm_fields_save_drupal_file($step, $file, $uid = 0, $destination = NULL) {
+  // build the destination
+  if (! $destination) {
+    $destination = media_mover_api_dir_path($step->sid);
+  }
+  // Make sure $file->filepath is set
+  $file->load_info();
+  // If this is a nonlocal file we cannot copy it (D6)
+  if (! strstr($file->uri, '://')) {
+    // Copy the file to the new location
+    file_copy($file->uri, $destination);
+  }
+  // build the file object
+  $new_file = new stdClass();
+  $new_file->new = TRUE;
+  $new_file->uid = $uid;
+  $new_file->filename = $file->filename;
+  $new_file->description = $file->description;
+  $new_file->filepath = $file->filepath;
+  $new_file->filemime = $file->filemime;
+  $new_file->filesize = $file->filesize;
+  $new_file->timestamp = REQUEST_TIME;
+  $new_file->data = array('display' => variable_get('upload_list_default', 1)); // @todo FIXME, upload.module is obsoleted, find a new global setting (if it exists);
+  $new_file->status = FILE_STATUS_PERMANENT;
+  // save the file, add usage so it is not deleted
+  $new_file = file_save($new_file);
+  file_usage_add($new_file, 'mm_fields', 'media_mover_file', $file->mmfid);
+  return $new_file;
+}
+
+
+/* ********************************************** */
+/* Form functions                                 */
+/* ********************************************** */
+
+/**
+ * Handles the display of the MM files edit form. Shamelessly stollen from upload.module
+ * @TODO update the file data to match MM files
+ * @param array $form
+ */
+function mm_fields_files_edit_form(&$form) {
+  $node = $form['#node'];
+  if (isset($node->media_mover)) {
+    // Add the submit handler
+    $form['#submit'][] = 'mm_fields_files_edit_form_submit';
+    $form['mm_entity_type'] = array('#type' => 'value', '#value' => 'node');
+    $form['mm_entity_id'] = array('#type' => 'value', '#value' => $node->nid);
+    $form['mm_fields_files'] = array(
+      '#type' => 'fieldset',
+      '#title' => t('Media Mover files'),
+      '#collapsible' => true,
+      '#collapsed' => false,
+      '#theme' => 'mm_fields_files_edit',
+      '#tree' => TRUE,
+      '#submit' => array('mm_fields_files_edit_form_submit'),
+      '#description' => t('This list of files that have been created by Media Mover'),
+    );
+    foreach ($node->media_mover as $cid => $files) {
+      foreach ($files as $mmfid => $file) {
+        $file->load_info();
+//@todo: usage?        $description = "<small>" . check_plain($file->filepath) . "</small>";
+        $form['mm_fields_files']['mm_fields_' . $file->mmfid]['#tree'] = TRUE;
+        $form['mm_fields_files']['mm_fields_' . $file->mmfid]['filepath']  = array('#type' => 'item', '#markup' => $file->filepath);
+        $form['mm_fields_files']['mm_fields_' . $file->mmfid]['size']      = array('#type' => 'item', '#markup' => format_size($file->filesize));
+        $form['mm_fields_files']['mm_fields_' . $file->mmfid]['remove']    = array('#type' => 'checkbox', '#title' => t('remove'), '#default_value' => !empty($file->remove));
+        $form['mm_fields_files']['mm_fields_' . $file->mmfid]['reprocess'] = array('#type' => 'checkbox', '#title' => t('reprocess'));
+        $form['mm_fields_files']['mm_fields_' . $file->mmfid]['display']   = array('#type' => 'checkbox', '#title' => t('display'), '#default_value' => !empty($file->data['display']));
+        $form['mm_fields_files']['mm_fields_' . $file->mmfid]['status']    = array('#type' => 'item',   '#markup' => $file->status);
+      }
+    }
+  }
+}
+
+
+/**
+ * Submission of the node edit form media mover files
+ *
+ * @TODO this seems broken right now
+ *
+ * @param array $form
+ * @param array $form_state
+ */
+function mm_fields_files_edit_form_submit($form, $form_state) {
+  // We need to look through the form values for the mm_fields_ prefix
+  if (!isset($form_state['values']['mm_fields_files'])) {
+    return;
+  }
+  foreach ($form_state['values']['mm_fields_files'] as $key => $value) {
+
+    // find the mmfid from the key
+    if (preg_match("/mm_fields_(.*)/", $key, $matches)) {
+
+      // Fetch the file that we will operate on
+      $file = media_mover_api_mmfile_load($matches[1]);
+
+      // Should we remove this file?
+      if ($value['remove']) {
+        $file->delete();
+      }
+
+      // @todo Implement - Should we reprocess this file? how?
+      // @NOTE not sure what to do with any files that were associated with tis file
+      elseif ($key['reprocess']) {
+        // Set the file status
+        // media_mover_api_file_process($file);
+      //  $configuration = media_mover_api_configuration_load($file->cid);
+      //  $configuration->run_file($file);
+      }
+
+      // should we list this file?
+      elseif ($key['display']) {
+        $file->data['display'] = TRUE;
+        $file->save();
+      }
+
+      // Reset the media mover cache for this node
+      $entity_type = $form_state['values']['mm_entity_type'];
+      $entity_id = $form_state['values']['mm_entity_id'];
+      if ($entity_type && $entity_id) {
+        $cache_name = $entity_type . '_files_' . $entity_id . '_' . MMA_FILE_STATUS_FINISHED;
+        cache_clear_all($cache_name, 'cache_media_mover');
+      }
+
+    }
+  }
+}
+
+/**
+ * Return an array of supported entity types.
+ *
+ * @param string $entity_type
+ *   Optional entity type, if provided, will return that specific entity type
+ * @return array
+ *   Array of supported entity types or array of entity type information
+ */
+function mm_fields_supported_entity_types($entity_type = FALSE) {
+// @todo: Use DrupalEntityControllerInterface to retrieve entity info
+  $entities_info = array(
+    'node' => array(
+      'entity_key'           => 'nid',        // Name of key field name in the entity's table
+      'entity_save_function' => 'node_save',  // Name of entity's save function, one that has one arg: save($entity)
+      'entity_module'        => 'node',       // Name of entity's module
+      'entity_table'         => 'node',       // Name of entity's table
+      'entity_bundle_key'    => 'type',       // Leave empty if entity does not have bundles or enter field name in the entity's table
+    ),
+/*
+    // @todo: Entity API, Implement for all entity types
+    'comment' => array(
+      'entity_key'           => 'cid',
+      'entity_save_function' => 'comment_save',
+      'entity_module'        => 'comment',
+      'entity_table'         => 'comment',
+      'entity_bundle_key'    => '',
+    ),
+    'user' => array(
+      'entity_key'           => 'uid',
+      'entity_save_function' => 'user_save',
+      'entity_module'        => 'user',
+      'entity_table'         => 'users',
+      'entity_bundle_key'    => '',
+    ),
+    'taxonomy_term' => array(),
+*/
+  );
+  if (!$entity_type) {
+    return $entities_info;
+  }
+  return isset($entities_info[$entity_type]) ? $entities_info[$entity_type] : FALSE;
+}
+
+/**
+ * Return array of fields for display in configuration forms.
+ *
+ * @param array $field_types
+ *   Array of field types that should be returned
+ * @return array
+ *   Array of options for form select input
+ */
+function mm_fields_available_fields($field_types = array()) {
+  $options = array();
+  // Get all field instance types
+  foreach (field_read_instances() as $id => $instance) {
+    $field = field_info_field($instance['field_name']);
+    if (!mm_fields_supported_entity_types($instance['entity_type'])) {
+      continue;
+    }
+    if (!empty($field_types) && !in_array($field['type'], $field_types)) {
+      continue;
+    }
+    $entity_info = entity_get_info($instance['entity_type'], $instance['field_name'], $instance['bundle']);
+    $key = $instance['entity_type'] . '--' . $instance['bundle'] . '--' . $instance['field_name'];
+    $entity_label = $entity_info['label']; // @todo - convert to human name
+    // For some reason entity_type=file, bundle=image, there is no $entity_info['bundles'][$instance['bundle']] element. Drupal 7 bug?
+    if (isset($entity_info['bundles'][$instance['bundle']])) {
+      $bundle_name = $entity_info['bundles'][$instance['bundle']]['label'];
+    }
+    else {
+      $bundle_name = $instance['bundle'];
+      // Capitalize
+      $bundle_name[0] = drupal_strtoupper($bundle_name[0]);
+    }
+    $value =  $entity_label . ': ' . $bundle_name . ': ' . $instance['label'];
+    $options[$key] = $value;
+  }
+  return $options;
+}
+
+
+/**
+ * Utility function to return either URI or drupal file path
+ * @todo: use $file->get_url()
+ *
+ * @param $path
+ */
+function mm_fields_filepath_check($source_file) {
+  if (! is_object($source_file)) {
+    $file = (object) $source_file;
+  }
+  else {
+    $file = $source_file;
+  }
+//@todo Convert file to media_mover_file class and call:  $file->load_info(); (or better move this functionality into $file->load_info())
+  // If this filepath has a URI in it, do not format it
+  if (! strstr($file->uri, '://')) {
+    $file->filepath = file_create_url($file->uri);
+  }
+  // We have a non-local url- we can alter it
+  else {
+    drupal_alter('media_mover_filepath', $file);
+  }
+  return $file->filepath;
+}
+
+
+/**
+ * Run Media Mover configurations on node create/update
+ *
+ * @param string $entity_type
+ *   Entity type
+ * @param string $entity_id
+ *   Entity id
+ * @param object $entity
+ *   Drupal entity object
+ */
+function mm_fields_auto_run($entity_type, $entity_id, $entity) {
+  // Get the list of configurations
+  $configurations = variable_get('mm_fields_run_configs', FALSE);
+  if ($configurations) {
+    $configurations_run = array();
+    // Run each configuration that is enabled
+    foreach ($configurations as $cid => $enabled) {
+      if ($enabled && !in_array($cid, $configurations_run)) {
+        $configuration = media_mover_api_configuration_load($cid);
+        $configurations_run[$cid] = TRUE;
+        // $configuration->parameter_set is propagated to each step->parameter_get()
+        $configuration->parameter_set('entity_presave', array(
+          'entity_type' => $entity_type,
+          'entity_id' => $entity_id,
+          'entity' => $entity,
+        ));
+        $configuration->run();
+      }
+    }
+  }
+}
+
+/**
+ * Worker code for hook_entity_presave().
+ *
+ * @param string $entity_type
+ *   Entity type
+ * @param string $entity_id
+ *   Entity id
+ * @param object $entity
+ *   Drupal entity object
+ */
+function _mm_fields_entity_presave($entity_type, $entity_id, &$entity) {
+// @todo: use $entity->original to see what changes are.
+  // The problem with file deletion from entities is that media mover
+  // can select from and store to different fields which makes it hard
+  // to figure out where to look for deletion. We implement a callback
+  // for each configuration to specifically look for the file for each
+  // step on the configuration.
+
+  // Do we have any files stored for this entity?
+  if ($configurations = mm_fields_entity_files_get($entity_type, $entity_id)) {
+    foreach ($configurations as $files) {
+      foreach ($files as $file) {
+        $found = array('found' => FALSE, 'delete' => TRUE);
+        // Identify any steps that were created by mm_fields
+        if ($steps = $file->steps_filtered_by_module('mm_fields')) {
+          foreach ($steps as $step) {
+            module_load_include('inc', 'mm_fields', $step->build['file']);
+            // The file exists functions are the same for each callback
+            $function = $step->build['callback'] . '_file_exists';
+            if (function_exists($function)) {
+              // Check if this file exists and/or should be deleted. Functions
+              // should set found = TRUE or delete = FALSE to stop the deletion
+              if ($function($entity_type, $entity, $step, $file, $found)) {
+                break;
+              }
+            }
+          }
+        }
+      }
+      // The file was not found on any part of the entity
+      // Are we supposed to delete this file
+      if (!$found['found'] && $found['delete']) {
+        $file->delete();
+      }
+    }
+  }
+}
+
+
+/**
+ * This governs the rss feeds for a given node
+ *
+ * @param string $entity_type
+ *   Entity type
+ * @param object $entity
+ *   Drupal entity object
+ * @return array
+ *   Drupal Form API array for enclosure
+ */
+function mm_fields_entity_files_rss_view($entity_type, $entity) {
+  // @TODO make settings per configuration to expose RSS
+  // Also fix for v2.
+  return;
+
+  if (user_access('view media mover files') && isset($entity->media_mover)) {
+    foreach ($entity->media_mover as $cid => $files) {
+      // load the configuration
+      $configuration = media_mover_api_configuration_load($cid);
+      if ($configuration->settings->mma_node_config_rss) {
+        // take the first file that we find on the array
+        $file = reset($files);
+        // structure the RSS
+        $rss = array(
+          array(
+            'key' => 'enclosure',
+            'attributes' => array(
+//@todo: fixme: 1. file is an object, 2. filepath needs $file->load_info() 3. 'url' should not be hardcoded like that.
+              'url' => $GLOBALS['base_url'] . '/' . $file['filepath'],
+              'length' => format_size(filesize($file['filepath'])),
+              'type' => file_get_mimetype($file['filepath']),
+            )
+          )
+        );
+        return $rss;
+      }
+    }
+  }
+}
+

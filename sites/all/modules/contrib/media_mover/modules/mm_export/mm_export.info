@@ -1,0 +1,14 @@
+name = "Media Mover Exporter"
+description = Provides export/import for Media Mover configurations and steps, as well as Features support.
+package = "Media Mover"
+core = 7.x
+php = 5.0
+dependencies[] = "ctools"
+
+
+; Information added by drupal.org packaging script on 2013-10-01
+version = "7.x-1.x-dev"
+core = "7.x"
+project = "media_mover"
+datestamp = "1380586535"
+

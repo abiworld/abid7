@@ -1,0 +1,23 @@
+name = "Media Mover API"
+description = Core of the Media Mover system
+package = "Media Mover"
+core = 7.x
+php = 5.2
+
+files[] = class_media_mover_configuration.inc
+files[] = class_media_mover_step.inc
+files[] = class_media_mover_file.inc
+files[] = media_mover_api.drush.inc
+
+files[] = plugins/source_file.inc
+files[] = plugins/directories.inc
+
+files[] = tests/media_mover_api.test
+files[] = tests/plugin_source_file.test
+files[] = tests/plugin_directories.test
+; Information added by drupal.org packaging script on 2013-10-01
+version = "7.x-1.x-dev"
+core = "7.x"
+project = "media_mover"
+datestamp = "1380586535"
+

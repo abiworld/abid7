@@ -1,0 +1,20 @@
+name = Media Mover Fields
+description = Media Mover Field Operations
+package = "Media Mover"
+
+dependencies[] = media_mover_api
+dependencies[] = node
+dependencies[] = field
+
+files[] = mm_fields.inc
+;files[] = mm_fields.node.inc
+
+core = 7.x
+
+
+; Information added by drupal.org packaging script on 2013-10-01
+version = "7.x-1.x-dev"
+core = "7.x"
+project = "media_mover"
+datestamp = "1380586535"
+
