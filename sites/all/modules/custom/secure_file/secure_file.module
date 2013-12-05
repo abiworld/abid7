@@ -1,0 +1,51 @@
+<?php
+
+
+
+function secure_file_menu()
+{
+	 $items = array();
+
+  $items['fileviewer/%'] = array(
+    'title'             => 'Securing the File Viewer',
+    'page callback'    => 'secure_file_download',
+    'page arguments'   => array(1),
+    'access callback' => 'user_access',
+    'access arguments' => array('access user profiles'),
+    'description'       => 'Manage settings for the ABI iMIS authentication module including authentication URL and optional extra permission checks',
+  );
+
+  return $items;
+
+}
+function secure_file_download($args)
+{
+	$fileinfo = get_fileinfo($args);
+
+}
+function get_fileinfo($fid){
+	$query = db_select('file_managed', 'f');
+	$query->condition('f.fid', $fid, '=')
+	      ->fields('f', array('fid', 'filename','filemime','uri'))
+	      ->range(0, 1);
+	$result = $query->execute();
+	
+	
+	foreach($result as $item){
+		$item->filename = "sites/default/files/media/".$item->filename;
+		if (file_exists($item->filename)) {
+		    header('Content-Description: File Transfer');
+		    header('Content-Type: application/octet-stream');
+		    header('Content-Disposition: attachment; filename='.basename($item->filename));
+		    header('Content-Transfer-Encoding: binary');
+		    header('Expires: 0');
+		    header('Cache-Control: must-revalidate');
+		    header('Pragma: public');
+		    header('Content-Length: ' . filesize($item->filename));
+		    ob_clean();
+		    flush();
+		    readfile($item->filename);
+		}
+	}
+	
+}
