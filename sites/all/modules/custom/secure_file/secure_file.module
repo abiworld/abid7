@@ -11,7 +11,7 @@ function secure_file_menu()
     'page callback'    => 'secure_file_download',
     'page arguments'   => array(1),
     'access callback' => 'user_access',
-    'access arguments' => array('access user profiles'),
+    'access arguments' => array('access content'),
     'description'       => 'Manage settings for the ABI iMIS authentication module including authentication URL and optional extra permission checks',
   );
 
