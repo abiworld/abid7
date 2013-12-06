@@ -47,7 +47,7 @@ function get_fileinfo($fid){
 			//encrypt the book and create the protected file
 			$returnedFile = pdfEncrypt($origFile, $password, $destFile );
 			//readfile($returnedFile);
-
+			die;
 		    header('Content-Description: File Transfer');
 		    header('Content-Type: application/octet-stream');
 		    header('Content-Disposition: attachment; filename='.basename($returnedFile));
