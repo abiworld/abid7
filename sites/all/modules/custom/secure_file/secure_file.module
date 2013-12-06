@@ -24,6 +24,8 @@ function secure_file_download($args)
 
 }
 function get_fileinfo($fid){
+	global $user;
+	
 	$query = db_select('file_managed', 'f');
 	$query->condition('f.fid', $fid, '=')
 	      ->fields('f', array('fid', 'filename','filemime','uri'))
@@ -34,18 +36,61 @@ function get_fileinfo($fid){
 	foreach($result as $item){
 		$item->filename = "sites/default/files/media/".$item->filename;
 		if (file_exists($item->filename)) {
+			$password = $user->mail;
+
+			//name of the original file (unprotected)
+			$origFile = $item->filename;
+
+			//name of the destination file (password protected and printing rights removed)
+			$destFile = "proctected_".basename($item->filename);
+
+			//encrypt the book and create the protected file
+			$returnedFile = pdfEncrypt($origFile, $password, $destFile );
+			//readfile($returnedFile);
+
 		    header('Content-Description: File Transfer');
 		    header('Content-Type: application/octet-stream');
-		    header('Content-Disposition: attachment; filename='.basename($item->filename));
+		    header('Content-Disposition: attachment; filename='.basename($returnedFile));
 		    header('Content-Transfer-Encoding: binary');
 		    header('Expires: 0');
 		    header('Cache-Control: must-revalidate');
 		    header('Pragma: public');
-		    header('Content-Length: ' . filesize($item->filename));
+		    header('Content-Length: ' . filesize($returnedFile));
 		    ob_clean();
 		    flush();
-		    readfile($item->filename);
+		    readfile($returnedFile);
+		    //password for the pdf file
+			
 		}
 	}
 	
 }
+function pdfEncrypt ($origFile, $password, $destFile){
+
+	//include the FPDI protection http://www.setasign.de/products/pdf-php-solutions/fpdi-protection-128/
+	require_once('fpdi/FPDI_Protection.php');
+
+	$pdf = &new FPDI_Protection();
+	var_dump($pdf);
+	// set the format of the destinaton file, in our case 6×9 inch
+	$pdf->FPDF('P', 'in', array('6','9'));
+
+	//calculate the number of pages from the original document
+	$pagecount = $pdf->setSourceFile($origFile);
+
+	// copy all pages from the old unprotected pdf in the new one
+	for ($loop = 1; $loop <= $pagecount; $loop++) {
+	    $tplidx = $pdf->importPage($loop);
+	    $pdf->addPage();
+	    $pdf->useTemplate($tplidx);
+	}
+
+	// protect the new pdf file, and allow no printing, copy etc and leave only reading allowed
+	$pdf->SetProtection(array(),$password);
+	$pdf->Output($destFile, 'F');
+
+	return $destFile;
+	
+	}
+
+	
