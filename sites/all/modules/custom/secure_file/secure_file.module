@@ -42,7 +42,7 @@ function get_fileinfo($fid){
 			$origFile = $item->filename;
 
 			//name of the destination file (password protected and printing rights removed)
-			$destFile = "proctected_".basename($item->filename);
+			$destFile = "/tmp/proctected_".basename($item->filename);
 
 			//encrypt the book and create the protected file
 			$returnedFile = pdfEncrypt($origFile, $password, $destFile );
