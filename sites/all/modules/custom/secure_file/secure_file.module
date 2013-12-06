@@ -32,7 +32,7 @@ function get_fileinfo($fid){
 	      ->range(0, 1);
 	$result = $query->execute();
 	
-	
+	var_dump($user);
 	foreach($result as $item){
 		$item->filename = "/var/www/abid7/sites/default/files/media/".$item->filename;
 		if (file_exists($item->filename)) {
@@ -42,7 +42,7 @@ function get_fileinfo($fid){
 			$origFile = $item->filename;
 
 			//name of the destination file (password protected and printing rights removed)
-			$destFile = "/var/www/abid7/sites/default/files/media/proctected_".basename($item->filename);
+			$destFile = "/var/www/abid7/sites/default/files/media/".check_plain($user->name)."_proctected_".basename($item->filename);
 			echo $destFile;
 			//encrypt the book and create the protected file
 			$returnedFile = pdfEncrypt($origFile, $password, $destFile );
