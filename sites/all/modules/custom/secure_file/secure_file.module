@@ -71,6 +71,7 @@ function pdfEncrypt ($origFile, $password, $destFile){
 	require_once('fpdi/FPDI_Protection.php');
 
 	$pdf = &new FPDI_Protection();
+	echo $destFile;
 	var_dump($pdf);
 	// set the format of the destinaton file, in our case 6×9 inch
 	$pdf->FPDF('P', 'in', array('6','9'));
