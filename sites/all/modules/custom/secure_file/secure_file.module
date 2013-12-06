@@ -58,7 +58,7 @@ function get_fileinfo($fid){
 		    header('Content-Length: ' . filesize($returnedFile));
 		    ob_clean();
 		    flush();
-		    readfile($returnedFile);
+		    //readfile($returnedFile);
 		    //password for the pdf file
 			
 		}
