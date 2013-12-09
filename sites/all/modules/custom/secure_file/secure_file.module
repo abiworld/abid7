@@ -71,7 +71,7 @@ function pdfEncrypt ($origFile, $password, $destFile){
 	$pdf = &new FPDI_Protection();
 
 	// set the format of the destinaton file, in our case 6×9 inch
-	$pdf->FPDF('P', 'in', array('6','19'));
+	$pdf->FPDF('', '', '');
 
 	//calculate the number of pages from the original document
 	$pagecount = $pdf->setSourceFile($origFile);
