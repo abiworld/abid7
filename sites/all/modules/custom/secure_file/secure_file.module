@@ -11,7 +11,7 @@ function secure_file_menu()
     'page callback'    => 'secure_file_download',
     'page arguments'   => array(1),
     'access callback' => 'user_access',
-    'access arguments' => array('access content user_is_logged_in'),
+    'access arguments' => array('access content'),
     'description'       => 'Manage settings for the ABI iMIS authentication module including authentication URL and optional extra permission checks',
   );
 
@@ -32,7 +32,6 @@ function get_fileinfo($fid){
 	      ->range(0, 1);
 	$result = $query->execute();
 	
-	var_dump($user);
 	foreach($result as $item){
 		$item->filename = "/var/www/abid7/sites/default/files/media/".$item->filename;
 		if (file_exists($item->filename)) {
@@ -70,8 +69,7 @@ function pdfEncrypt ($origFile, $password, $destFile){
 	require_once('fpdi/FPDI_Protection.php');
 
 	$pdf = &new FPDI_Protection();
-	echo $destFile;
-	var_dump($pdf);
+	
 	// set the format of the destinaton file, in our case 6×9 inch
 	$pdf->FPDF('P', 'in', array('6','9'));
 
