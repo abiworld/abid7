@@ -44,7 +44,24 @@ function get_fileinfo($fid){
 			$destFile = "/var/www/abid7/sites/default/files/media/".check_plain($user->name)."_proctected_".basename($item->filename);
 			echo $destFile;
 			//encrypt the book and create the protected file
-			$returnedFile = pdfEncrypt($origFile, $password, $destFile );
+			require('pdfrotator.inc');
+			$pdf = new PDF();
+
+		    if (file_exists($origFile)){
+		        $pagecount = $pdf->setSourceFile($origFile);
+		    } else {
+		        return FALSE;
+		    }
+
+		   $pdf->setWaterText("w a t e r M a r k d e m o ", "s e c o n d L i n e o f t e x t");
+
+		  /* loop for multipage pdf */
+		   for($i=1; $i <= $pagecount; $i++) { 
+		     $tpl = $pdf->importPage($i);               
+		     $pdf->addPage(); 
+		     $pdf->useTemplate($tpl, 1, 1, 0, 0, TRUE);  
+		   }
+		    $pdf->Output($destFile); //specify path filename to save or keep as it is to view in browser
 			//readfile($returnedFile);
 		    header('Content-Description: File Transfer');
 		    header('Content-Type: application/octet-stream');
@@ -63,27 +80,3 @@ function get_fileinfo($fid){
 	}
 	
 }
-function pdfEncrypt ($origFile, $password, $destFile){
-
-	require('pdfrotator.inc');
-	$pdf = new PDF();
-
-    if (file_exists($origFile)){
-        $pagecount = $pdf->setSourceFile($origFile);
-    } else {
-        return FALSE;
-    }
-
-   $pdf->setWaterText("w a t e r M a r k d e m o ", "s e c o n d L i n e o f t e x t");
-
-  /* loop for multipage pdf */
-   for($i=1; $i <= $pagecount; $i++) { 
-     $tpl = $pdf->importPage($i);               
-     $pdf->addPage(); 
-     $pdf->useTemplate($tpl, 1, 1, 0, 0, TRUE);  
-   }
-    $pdf->Output($destFile); //specify path filename to save or keep as it is to view in browser
-    return $pdf->Output($destFile);
-	}
-
-	
