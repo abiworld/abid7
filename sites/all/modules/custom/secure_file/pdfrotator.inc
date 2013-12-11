@@ -1,5 +1,5 @@
 <?php
-
+define('FPDF_FONTPATH', 'font/');
  require('fpdi/rotation.php');
 class PDF extends PDF_Rotate{
         protected $_outerText1;// dynamic text
@@ -12,7 +12,7 @@ class PDF extends PDF_Rotate{
 
         function Header(){
             //Put the watermark
-            $this->SetFont('Arial','B',40);
+            //$this->SetFont('Arial','B',40);
             $this->SetTextColor(255,192,203);
                     $this->SetAlpha(0.5);
             $this->RotatedText(35,190, $this->_outerText1, 45);
