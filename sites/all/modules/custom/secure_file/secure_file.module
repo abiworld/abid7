@@ -1,5 +1,5 @@
 <?php
-
+ 
 
 
 function secure_file_menu()
@@ -33,50 +33,77 @@ function get_fileinfo($fid){
 	$result = $query->execute();
 	
 	foreach($result as $item){
-		$item->filename = "/var/www/abid7/sites/default/files/media/".$item->filename;
+		$item->filename = "public://".$item->filename;
 		if (file_exists($item->filename)) {
-			$password = $user->mail;
-
 			//name of the original file (unprotected)
 			$origFile = $item->filename;
-
-			//name of the destination file (password protected and printing rights removed)
-			$destFile = "/var/www/abid7/sites/default/files/media/".check_plain($user->name)."_proctected_".basename($item->filename);
-			echo $destFile;
-			//encrypt the book and create the protected file
-			require('pdfrotator.inc');
-			$pdf = new PDF();
-
-		    if (file_exists($origFile)){
-		        $pagecount = $pdf->setSourceFile($origFile);
-		    } else {
-		        return FALSE;
-		    }
-
-		   $pdf->setWaterText("w a t e r M a r k d e m o ", "s e c o n d L i n e o f t e x t");
-
-		  /* loop for multipage pdf */
-		   for($i=1; $i <= $pagecount; $i++) { 
-		     $tpl = $pdf->importPage($i);               
-		     $pdf->addPage(); 
-		     $pdf->useTemplate($tpl, 1, 1, 0, 0, TRUE);  
-		   }
-		    $pdf->Output($destFile); //specify path filename to save or keep as it is to view in browser
-			//readfile($returnedFile);
-		    header('Content-Description: File Transfer');
-		    header('Content-Type: application/octet-stream');
-		    header('Content-Disposition: attachment; filename='.basename($returnedFile));
-		    header('Content-Transfer-Encoding: binary');
-		    header('Expires: 0');
-		    header('Cache-Control: must-revalidate');
-		    header('Pragma: public');
-		    header('Content-Length: ' . filesize($returnedFile));
-		    ob_clean();
-		    flush();
-		    readfile($returnedFile);
-		    //password for the pdf file
-			
+			$destFile = "public://".check_plain($user->name)."_proctected_".basename($item->filename);
+			$returnedFile = PlaceWatermark($origFile, "Document prepared for ".$user->name, 30, 30, 100,TRUE);
+		}
+		else
+		{
+			echo "File Path not found !!!!";
+			die;
 		}
 	}
 	
+}
+/* 
+Usage: PlaceWatermark($filename, $text, $x, $y, $opacity, $directoutput);
+
+$filename – The path of the PDF in which you want to put the Watermark
+$text – The Watermark text you want to add
+$x – x coordinate where you want to put the Watermark
+$y – y coordinate where you want to put the Watermark
+$opacity – Opacity of the text
+$directoutput – If TRUE function will output a PDF File, else it will return the $pdf 
+*/
+function PlaceWatermark($file, $text, $xxx, $yyy, $op, $outdir) {
+	define('FPDF_FONTPATH', drupal_get_path('module', 'secure_file')."/fpdf17/font/");
+	global $user;
+
+	require_once(drupal_get_path('module', 'secure_file').'/image.handler/image_lib_class.php');
+	
+	require_once(drupal_get_path('module', 'secure_file')."/fpdf17/fpdf.php");
+	require_once(drupal_get_path('module', 'secure_file')."/fpdi/fpdi.php");
+
+	$today = date("M d Y h:m:s");
+	$text = $text."\n".$today;
+    $imageLibObj = new imageLib(drupal_get_path('module', 'secure_file').'/a4.png');
+    $imageLibObj -> addText($text, $xxx.'x'.$yyy, 0, '#98989800', 30, 45, drupal_get_path('module', 'secure_file').'/image.handler/fonts/elephant.ttf',0,50);
+    $imageLibObj -> saveImage(drupal_get_path('module', 'secure_file').'/wm.png', 50);
+   
+   
+    $pdf = &new FPDI();
+
+    if (file_exists($file)){
+        $pagecount = $pdf->setSourceFile($file);
+    } else {
+        return FALSE;
+    }
+	for($i=1; $i <= $pagecount; $i++) {   
+		$tpl = $pdf->importPage($i);    
+		$pdf->addPage();     
+		$pdf->useTemplate($tpl, 1, 1, 0, 0, TRUE);    
+		//Put the watermark  
+		$pdf->Image(drupal_get_path('module', 'secure_file').'/wm.png', $xxx, $yyy, 0, 0, 'png');
+	}  
+    if ($outdir === TRUE){
+    	$destFile = "public://".check_plain($user->name)."_proctected.pdf";
+		$pdf->Output($destFile, "F");
+		header('Content-Description: File Transfer');
+	    header('Content-Type: application/octet-stream');
+	    header('Content-Disposition: attachment; filename='.basename($destFile));
+	    header('Content-Transfer-Encoding: binary');
+	    header('Expires: 0');
+	    header('Cache-Control: must-revalidate');
+	    header('Pragma: public');
+	    header('Content-Length: ' . filesize($destFile));
+	    ob_clean();
+	    flush();
+	 	readfile($destFile);
+	 	unlink($destFile);
+    } else {
+        return $pdf;
+    }
 }

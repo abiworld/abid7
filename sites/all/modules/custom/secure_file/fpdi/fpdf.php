@@ -511,7 +511,7 @@ function SetFont($family,$style='',$size=0)
 {
 	//Select a font; size given in points
 	global $fpdf_charwidths;
-
+	
 	$family=strtolower($family);
 	if($family=='')
 		$family=$this->FontFamily;
