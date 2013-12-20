@@ -75,7 +75,7 @@ class SearchApiSolrConnection implements SearchApiSolrConnectionInterface {
   /**
    * Path to the ping servlet.
    */
-  const PING_SERVLET = 'admin/ping';
+  const PING_SERVLET = 'admin/ping?df=id';
 
   /**
    * Path to the update servlet.
