@@ -25,7 +25,7 @@
 ?>
 <?php if ($search_results): ?>
   <h2><?php print t('Search results');?></h2>
-  <?php print $search_totals; ?>
+  <?php print "Results Found " $search_totals; ?>
   <ol class="search-results <?php print $module; ?>-results">
     <?php print $search_results; ?>
   </ol>
