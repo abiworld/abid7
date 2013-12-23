@@ -1,0 +1,7 @@
+<?php
+/**
+ * @file
+ * Code for the Abstract feature.
+ */
+
+include_once 'abstract.features.inc';
