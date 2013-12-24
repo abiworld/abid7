@@ -470,10 +470,7 @@ function abi_imis_auth_webservice($name = '', $pass = '') {
    
 
   $result = $client->call( 'Login', $data, '', '', FALSE, TRUE );
-  var_dump($result->LoginResult);
-  $e_result = $client->call('Profile',array( 'method' => 'get', 'id' => $name -> uid, 'profile' => '' ));
-  var_dump($e_result);die;
-  if ($result->code != 200) {
+   if ($result->code != 200) {
     // Request not successful
     $msg = t('Attempt to authenticate user %name at host %host failed with HTTP error code: %code.',
       array('%name' => $name, '%host' => $host, '%code' => $result->code));
