@@ -116,6 +116,7 @@ function abstract_strongarm() {
   $strongarm->name = 'node_options_headlines';
   $strongarm->value = array(
     0 => 'status',
+    1 => 'premium',
   );
   $export['node_options_headlines'] = $strongarm;
 
