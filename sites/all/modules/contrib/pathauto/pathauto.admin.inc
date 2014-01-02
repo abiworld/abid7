@@ -15,6 +15,7 @@
  */
 function pathauto_patterns_form($form, $form_state) {
   // Call the hook on all modules - an array of 'settings' objects is returned
+    module_implements('pathauto', false, true);
   $all_settings = module_invoke_all('pathauto', 'settings');
   foreach ($all_settings as $settings) {
     $module = $settings->module;
