@@ -1,0 +1,12 @@
+name = Ubercart Ajax Administration
+description = Administrative interface for ajax updates to Ubercart forms.
+dependencies[] = uc_cart
+package = Ubercart - extra
+core = 7.x
+
+; Information added by Drupal.org packaging script on 2013-12-17
+version = "7.x-3.6"
+core = "7.x"
+project = "ubercart"
+datestamp = "1387304010"
+
