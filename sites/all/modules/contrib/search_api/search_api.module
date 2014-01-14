@@ -253,6 +253,7 @@ function search_api_theme() {
       'machine_name' => '',
       'description' => NULL,
       'enabled' => NULL,
+      'class_id' => NULL,
       'class_name' => NULL,
       'class_description' => NULL,
       'indexes' => array(),
@@ -391,6 +392,7 @@ function search_api_entity_info() {
     'entity class' => 'SearchApiServer',
     'base table' => 'search_api_server',
     'uri callback' => 'search_api_server_url',
+    'access callback' => 'search_api_entity_access',
     'module' => 'search_api',
     'exportable' => TRUE,
     'entity keys' => array(
@@ -406,6 +408,7 @@ function search_api_entity_info() {
     'entity class' => 'SearchApiIndex',
     'base table' => 'search_api_index',
     'uri callback' => 'search_api_index_url',
+    'access callback' => 'search_api_entity_access',
     'module' => 'search_api',
     'exportable' => TRUE,
     'entity keys' => array(
@@ -1009,17 +1012,17 @@ function search_api_search_api_alter_callback_info() {
   );
   $callbacks['search_api_alter_node_access'] = array(
     'name' => t('Node access'),
-    'description' => t('Add node access information to the index.'),
+    'description' => t('Add node access information to the index. <strong>Caution:</strong> This only affects the indexed nodes themselves, not any node reference fields that are indexed with them, or displayed in search results.'),
     'class' => 'SearchApiAlterNodeAccess',
   );
   $callbacks['search_api_alter_comment_access'] = array(
     'name' => t('Access check'),
-    'description' => t('Add node access information to the index.'),
+    'description' => t('Add node access information to the index. <strong>Caution:</strong> This only affects the indexed nodes themselves, not any node reference fields that are indexed with them, or displayed in search results.'),
     'class' => 'SearchApiAlterCommentAccess',
   );
   $callbacks['search_api_alter_node_status'] = array(
     'name' => t('Exclude unpublished nodes'),
-    'description' => t('Exclude unpublished nodes from the index.'),
+    'description' => t('Exclude unpublished nodes from the index. <strong>Caution:</strong> This only affects the indexed nodes themselves. If an enabled node has references to disabled nodes, those will still be indexed (or displayed) normally.'),
     'class' => 'SearchApiAlterNodeStatus',
   );
 
@@ -1918,7 +1921,7 @@ function search_api_search_api_query_alter(SearchApiQueryInterface $query) {
   // Only add node access if the necessary fields are indexed in the index, and
   // unless disabled explicitly by the query.
   $type = $index->getEntityType();
-  if (!empty($index->options['data_alter_callbacks']["search_api_alter_{$type}_access"]) && !$query->getOption('search_api_bypass_access')) {
+  if (!empty($index->options['data_alter_callbacks']["search_api_alter_{$type}_access"]['status']) && !$query->getOption('search_api_bypass_access')) {
     $account = $query->getOption('search_api_access_account', $user);
     if (is_numeric($account)) {
       $account = user_load($account);
@@ -2359,6 +2362,15 @@ function search_api_access_disable_page(Entity $entity) {
  */
 function search_api_access_delete_page(Entity $entity) {
   return user_access('administer search_api') && $entity->hasStatus(ENTITY_CUSTOM);
+}
+
+/**
+ * Determines whether a user can access a certain search server or index.
+ *
+ * Used as an access callback in search_api_entity_info().
+ */
+function search_api_entity_access() {
+  return user_access('administer search_api');
 }
 
 /**

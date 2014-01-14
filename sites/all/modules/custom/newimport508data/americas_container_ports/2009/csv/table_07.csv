@@ -1,0 +1,42 @@
+ Table 7  ,,,,,,,,,,,
+" U.S. Maritime Port Activity and Landside Traffic Delay per Traveler in Surrounding Urban Area: 2007
+ ",,,,,,,,,,,
+Ranked by port calls by all vessel types,Port, Port calls and capacity by all vessel types ,, Overall maritime cargo tonnage (domestic and international) ,,Landside annual traffic delay per traveler in surrounding urban area (2005)1,,,,,
+,, Calls ," Capacity (dwt, millions) ",Total short tons (millions),Rank by tonnage,Hours of delay,Rank,,,,
+1,"Houston, TX","6,195",267,216, 2 ,56,7,,,,
+2,"Los Angeles/Long Beach, CA","5,492",336,151, 4 ,72,1,,,,
+3,"New York, NY","4,968",232,157, 3 ,46,16,,,,
+4,"New Orleans, LA","4,884",240,76, 9 ,18,63,,,,
+5,"San Francisco Bay Area ports, CA2","3,945",213,48, 17 ,60,2,,,,
+6,"Philadelphia/Delaware River ports, PA3","3,148",192,111, 5 ,38,33,,,,
+7,"Virginia ports, VA4","2,775",138,56, 15 ,30,42,,,,
+8,"Savannah, GA","2,615",122,36, 23 ,NA,NA,,,,
+9,"Columbia River ports, OR5","2,578",100,56, 14 ,38,33,,,,
+10,"Charleston, SC","2,160",97,23, 33 ,31,40,,,,
+11,"Baltimore,MD","1,833",63,41, 20 ,44,22,,,,
+12,"Port Everglades, FL","1,472",52,24, 32 ,NA,NA,,,,
+13,"Jacksonville, FL","1,470",43,21, 35 ,39,29,,,,
+14,"Port Arthur, TX","1,418",95,29, 27 ,11,77,,,,
+15,"Tacoma, WA","1,241",63,27, 29 ,45,19,,,,
+16,"Texas City, TX","1,200",70,57, 13 ,56,7,,,,
+17,"Corpus Christi, TX","1,080",72,81, 7 ,10,80,,,,
+18,"San Juan, PR","1,045",23,12, 45 ,NA,NA,,,,
+19,"Seattle, WA","1,042",60,28, 28 ,45,19,,,,
+20,"Miami, FL",927,31,7, 56 ,50,11,,,,
+21,"Mobile, AL",885,47,64, 10 ,NA,NA,,,,
+22,"Freeport, TX",806,40,30, 26 ,NA,NA,,,,
+23,"Tampa, FL",800,29,47, 18 ,NA,NA,,,,
+24,"Lake Charles, LA",796,56,64, 11 ,NA,NA,,,,
+25,"Honolulu, HI",648,21,18, 37 ,24,51,,,,
+KEY: dwt = deadweight tons. NA = Not available in the Texas Transportation Institute 2007 Annual Urban Mobility Study. ,,,,,,,,,,,
+"NOTES: 
+1 The most recent year for which data on landside annual traffic delay are available is 2005. Annual delay per traveler equals extra travel time for peak-period travel during the year divided by the number of travelers who begin a trip during  the peak period (6 to 9 a.m. and 4 to 7 p.m.). These peak-period travel times are compared wih times for free-flow speeds (60 mph on freeways and 35 mph on principal arterials).
+
+2 San Francisco Bay Area ports: Oakland, Redwood City, Richmond, San Francisco, and Stockton.
+
+3 Philadelphia/Delaware River ports: Philadelphia, Paulsboro, Marcus Hook, Camden-Gloucester, Chester, and Wilmington.
+
+4 Virginia ports: Norfolk, Richmond, and Newport News.
+
+5 Columbia River ports: Portland, Longview, Vancouver, and Kalama.",,,,,,,,,,,
+"SOURCES: U.S. Department of Transportation, Research and Innovative Technology Administration, Bureau of Transportation Statistics, based on data from three sources. Port calls data: Maritime Administration, Ports Calls Data, at www.marad.dot.gov, as of March 31, 2009. Cargo weight data: U.S. Army Corps of Engineers, Waterborne Commerce Statistics Center, at www.iwr.usace.army.mil/ndc/wcsc/wcsc.htm, as of March 31, 2009. Traffic delay data: Texas Transportation Institute, 2007 Annual Urban Mobility Study, Table 1, available at mobility.tamu.edu/ums, as of March 30, 2009.",,,,,,,,,,,

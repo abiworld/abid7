@@ -1,0 +1,345 @@
+<?php
+/**
+ * Implements hook_install().
+ */
+define('SYNC_URL','http://evgeny:d3c240a3968def7d71649fefaad5b88673912618@www.abiworld.org/WebServices/Consumer.cfc?method=fetchConsumerLawyerList&strState=VA');
+function abi_members_install()
+{
+  //$sync_url = "http://evgeny:d3c240a3968def7d71649fefaad5b88673912618@www.abiworld.org/WebServices/Consumer.cfc?method=fetchConsumerLawyerList&strState=VA";
+//  $cron_last = db_result(db_query('select timestamp from {watchdog} where type="cron" order by timestamp desc limit 1'));
+    //if( date('ymd', $cron_last) != date('ymd', time() ) ){ // Once daily
+    $json = file_get_contents(SYNC_URL);
+    $json = drupal_json_decode($json);
+
+  //}
+    $type_values = array(
+    'op' => 'Save content type', 
+    'type' => 'abi_members',
+        'name' => 'ABI Members', 
+    'orig_type' => '', 
+    'old_type' => '', 
+    'description' => 'Sync ABI Members with IMIS JSon Service Call', 
+    'help' => 'Exp', 
+    'title_label' => 'Member ID', 
+    'body_label' => '', 
+    'base' => '',
+        'custom' => '1', 
+    'locked' => '0', 
+    'modified' => '1'
+  );
+
+    $op = isset($type_values['op']) ? $type_values['op'] : '';
+
+    $type = node_type_set_defaults();
+
+    $type->type = trim($type_values['type']);
+    $type->name = trim($type_values['name']);
+    $type->orig_type = trim($type_values['orig_type']);
+    $type->old_type = isset($type_values['old_type']) ? $type_values['old_type'] : $type->type;
+
+    $type->description = $type_values['description'];
+    $type->help = $type_values['help'];
+    $type->title_label = $type_values['title_label'];
+    $type->body_label = $type_values['body_label'];
+
+    // title_label is required in core; has_title will always be true, unless a
+    // module alters the title field.
+    $type->has_title = ($type->title_label != '');
+    $type->has_body = ($type->body_label != '');
+
+    $type->base = !empty($type_values['base']) ? $type_values['base'] : 'node_content';
+    $type->custom = $type_values['custom'];
+    $type->modified = true;
+    $type->locked = $type_values['locked'];
+
+    variable_set('teaser_length_' . 600);
+    variable_set('node_preview_' . 1);
+
+    // Saving the content type after saving the variables allows modules to act
+    // on those variables via hook_node_type_insert().
+    $status = node_type_save($type);
+
+    node_types_rebuild();
+    menu_rebuild();
+    $t_args = array('%name' => $type->name);
+
+    if ($status == SAVED_UPDATED)
+    {
+        drupal_set_message(t('The content type %name has been updated.', $t_args));
+    } elseif ($status == SAVED_NEW)
+    {
+        drupal_set_message(t('The content type %name has been added.', $t_args));
+        
+    }
+    //creating a textarea field to hold the entire json input
+      $json_field = array(
+         'field_name' => 'abi_members_json_data',
+         'label' => t('Json Data'),
+         'type' => 'text_long',
+     );
+       field_create_field($json_field);
+       $json_instance = array(
+        'field_name' => 'abi_members_json_data',
+        'entity_type' => 'node',
+        'bundle' => 'abi_members',
+        'label' => t('ABI Json Data'),
+        'description' => t('JSON String returned from IMIS.'),
+        'widget' => array(
+          'type' => 'text_long',
+          'weight' => 10,
+        ),
+      );
+       field_create_instance($json_instance);
+       //creating a textarea field to hold the entire latitude input
+      $json_field1 = array(
+         'field_name' => 'abi_members_latitude',
+         'label' => t('Latitude'),
+         'type' => 'text',
+     );
+       field_create_field($json_field1);
+       $json_instance1 = array(
+        'field_name' => 'abi_members_latitude',
+        'entity_type' => 'node',
+        'bundle' => 'abi_members',
+        'label' => t('Latitude'),
+        'description' => t('Latitude Calculation.'),
+        'widget' => array(
+          'type' => 'text_textfield',
+          'weight' => 10,
+        ),
+      );
+       field_create_instance($json_instance1);
+       //creating a textarea field to hold the entire latitude input
+      $json_field2 = array(
+         'field_name' => 'abi_members_longitude',
+         'label' => t('Longitude'),
+         'type' => 'text',
+     );
+    field_create_field($json_field2);
+    $json_instance2 = array(
+        'field_name' => 'abi_members_longitude',
+        'entity_type' => 'node',
+        'bundle' => 'abi_members',
+        'label' => t('Longitude'),
+        'description' => t('Longitude Calculation.'),
+        'widget' => array(
+          'type' => 'text_textfield',
+          'weight' => 10,
+        ),
+      );
+       field_create_instance($json_instance2);
+    foreach($json[0] as $key => $value)
+    {
+
+      drupal_set_message("abi_members_".$key." cck has been created!!!!! ","status");
+      
+      if($key == "additional_states") {
+        drupal_set_message(t($key), 'status', FALSE);
+          $field = array(
+          // It is strongly advised to prefix the field name with the name of the module 
+          // that defines it, to avoid name clashes. Fields created through Field UI are
+          // prefixed with 'field_'
+          'field_name' => 'abi_members_'.$key,
+          'type' => 'text',
+          'cardinality' => 10, // Not required, as it's the default
+        );
+      } else {
+          $field = array(
+          // It is strongly advised to prefix the field name with the name of the module 
+          // that defines it, to avoid name clashes. Fields created through Field UI are
+          // prefixed with 'field_'
+          'field_name' => 'abi_members_'.$key,
+          'type' => 'text',
+          'cardinality' => 1, // Not required, as it's the default
+        );
+      }
+    
+      field_create_field($field);
+      $label = str_replace("_", " ", $key);
+      $label = ucwords($label);
+      $instance = array(
+        'field_name' => 'abi_members_'.$key,
+        'entity_type' => 'node',
+        'bundle' => 'abi_members',
+        'label' => t($label),
+        'description' => t('You can enter your '.$key.' here.'),
+        'widget' => array(
+          'type' => 'text_textfield',
+          'weight' => 10,
+        ),
+      );
+      field_create_instance($instance);
+    }
+   //creating Probono Content Types
+  $protype_values = array(
+    'op' => 'Save content type', 
+    'type' => 'probono_members',
+        'name' => 'Probono Members', 
+    'orig_type' => '', 
+    'old_type' => '', 
+    'description' => 'Probono Member Content Type', 
+    'help' => 'Exp', 
+    'title_label' => 'Probono Member ID', 
+    'body_label' => '', 
+    'base' => '',
+        'custom' => '1', 
+    'locked' => '0', 
+    'modified' => '1'
+  );
+
+    $op = isset($protype_values['op']) ? $protype_values['op'] : '';
+
+    $protype = node_type_set_defaults();
+
+    $protype->type = trim($protype_values['type']);
+    $protype->name = trim($protype_values['name']);
+    $protype->orig_type = trim($protype_values['orig_type']);
+    $protype->old_type = isset($protype_values['old_type']) ? $protype_values['old_type'] : $protype->type;
+
+    $protype->description = $protype_values['description'];
+    $protype->help = $protype_values['help'];
+    $protype->title_label = $protype_values['title_label'];
+    $protype->body_label = $protype_values['body_label'];
+
+    // title_label is required in core; has_title will always be true, unless a
+    // module alters the title field.
+    $protype->has_title = ($protype->title_label != '');
+    $protype->has_body = ($protype->body_label != '');
+
+    $protype->base = !empty($protype_values['base']) ? $protype_values['base'] : 'node_content';
+    $protype->custom = $protype_values['custom'];
+    $protype->modified = true;
+    $protype->locked = $protype_values['locked'];
+
+    variable_set('teaser_length_' . 600);
+    variable_set('node_preview_' . 1);
+
+    // Saving the content type after saving the variables allows modules to act
+    // on those variables via hook_node_type_insert().
+    $status = node_type_save($protype);
+
+    node_types_rebuild();
+    menu_rebuild();
+    $t_args = array('%name' => $protype->name);
+
+    if ($status == SAVED_UPDATED)
+    {
+        drupal_set_message(t('The content type %name has been updated.', $t_args));
+    } elseif ($status == SAVED_NEW)
+    {
+        drupal_set_message(t('The content type %name has been added.', $t_args));
+        
+    }
+    //org name
+    $probo_textfields = array(
+                    'org_name'=>'Organization Name',
+                    'contact' => 'Contact',
+                    'mailing_address' => 'Mailing Address',
+                    'mailing_sub' => 'Mailing Sub',
+                    'city' => 'City',
+                    'state' => 'State',
+                    'zip' => 'Zip',
+                    'rep_by_attys' => 'Representation By Attys',
+                    'city2' => 'City 2',
+                    'state2' => 'State 2',
+                    'zip2' => 'Zip 2',
+                    'tollfreenum' => 'Toll Free Number',
+                    'localnumber' => 'Local Number',
+                    'fax' => 'Fax',
+                    'email' => 'Email',
+                    'website' => 'Website',
+                    'date_updated' => 'Date Updated',
+                    );
+
+    //creating a textarea field to hold the entire json input
+    foreach($probo_textfields as $fname => $flabel)
+    {
+       $orgname_field = array(
+         'field_name' => 'probono_members_'.$fname,
+         'type' => 'text',
+     );
+       field_create_field($orgname_field);
+       $orgname_instance = array(
+        'field_name' => 'probono_members_'.$fname,
+        'entity_type' => 'node',
+        'bundle' => 'probono_members',
+        'label' => t($flabel),
+        'description' =>'Stores Probono Members '.$flabel,
+        'widget' => array(
+          'type' => 'text_textfield',
+          'weight' => 10,
+        ),
+      );
+       field_create_instance($orgname_instance);
+       drupal_set_message(t($fname), 'status', FALSE);
+    }
+    $probono_textareafields = array(
+                    'chapt_held'=>'Chapters Held',
+                    'elig_guidelines' => 'Eligibility Guidelines',
+                    'limitations' => 'Limitations',
+                    'type_of_rep' => 'Type of Representation',
+                    'phy_address' => 'Physical Address',
+                    'cr_couns_arr' => 'Credit Counseling Arranged',
+                    'debt_ed_arr' => 'Debtor Education Arranged',
+                    'court_fee' => 'Court Fee Waviers Prepared only 7',
+                    'other_services' => 'Other Services',
+                    );
+    foreach($probono_textareafields as $f1name => $f1label)
+    {
+       $orgname_field1 = array(
+         'field_name' => 'probono_members_'.$f1name,
+         'type' => 'text_long',
+     );
+       field_create_field($orgname_field1);
+       $orgname_instance1 = array(
+        'field_name' => 'probono_members_'.$f1name,
+        'entity_type' => 'node',
+        'bundle' => 'probono_members',
+        'label' => t($f1label),
+        'description' =>'Stores Probono Members '.$f1label,
+        'widget' => array(
+          'type' => 'text_long',
+          'weight' => 10,
+        ),
+      );
+       field_create_instance($orgname_instance1);
+       drupal_set_message(t($fname), 'status', FALSE);
+    }
+}
+function abi_members_uninstall() {
+  // gather all the content while the module was enabled
+  $ctypes = array("abi_members","probono_members");
+  $sql = 'SELECT nid FROM {node} n WHERE n.type = :type';
+  foreach($ctypes as $cotypes){
+    $result = db_query($sql, array(':type' => $cotypes));
+  }
+  
+  $nids = array();
+  foreach ($result as $row) {
+    $nids[] = $row->nid;
+  }
+  
+  // delete all the nodes at once
+  node_delete_multiple($nids);
+
+    // delete our content type
+  node_type_delete('abi_members');
+  node_type_delete('probono_members');
+  // purge all field information
+  field_purge_batch(1000);
+  $json = file_get_contents(SYNC_URL);
+  $json = drupal_json_decode($json);
+  foreach($json[0] as $key => $value)
+  {
+    variable_del('abi_members_'.$key);
+  }
+  variable_del('abi_members_json_data');
+  variable_del('abi_members_latitude');
+  variable_del('abi_members_longitude');
+  // Clear the cache tables.
+  cache_clear_all('*', 'cache', TRUE);
+  cache_clear_all('*', 'cache_filter', TRUE);
+  cache_clear_all('*', 'cache_menu', TRUE);
+  cache_clear_all('*', 'cache_page', TRUE);
+}
+?>

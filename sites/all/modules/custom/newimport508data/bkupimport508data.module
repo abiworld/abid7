@@ -1,0 +1,483 @@
+<?php
+error_reporting(E_ALL ^ E_NOTICE);
+set_time_limit(0);
+/**
+ * import508data_menu()
+ *
+ * @return
+ */
+function import508data_menu()
+{
+	$items = array();
+	$items['import508data/add'] = array(
+	    'title' => 'Import 508 HTML',
+        'page callback' => 'drupal_get_form',
+	    'page arguments' => array('import508data_form'),
+	 	'access arguments' => array('access content'),
+	    'type' => MENU_SUGGESTED_ITEM,
+	  );
+	return $items;
+}
+
+
+/**
+ * import508data_form()
+ *
+ * @return
+ */
+
+function import508data_form() {
+
+ 	$form['#attributes'] = array('enctype' => "multipart/form-data");
+     $content_types = _node_types_build()->types;
+     $data = array();
+     foreach($content_types as $key => $keyfield)
+     {
+         $data[$key] = $content_types[$key]->name;
+     }
+    $form['contents'] = array(
+         '#type' => 'radios',
+         '#title' => t('List of Content Types'),
+         '#weight' => 8,
+         '#required' => TRUE,
+         '#options' => $data,
+         '#description' => t('Uploaded HTML content will be default uploaded to body field of the content type'),
+    );
+
+    $form['path'] = array(
+					 '#title' => t('Content Path'),
+					 '#type' => 'textfield',
+                    '#size' => 125,
+                    '#weight' => 9,
+                    '#required' => TRUE,
+                    '#default_value' => "sites/default/files/publications/",
+					 '#description'=>'Enter the file location on the Server e.x. sites/rita.dot.gov.bts/files/publications ',
+						   
+	);
+    $form['menuopt'] =  array(
+					 '#title' => t('Menu Link Path'),
+					 '#type' => 'textfield',
+                    '#size' => 125,
+                    '#weight' => 10,
+                    '#required' => TRUE,
+                    '#default_value' => "",
+					 '#description'=>'Enter the Menu Path Location on the Drupal Navigation e.x. Publication/',
+
+	);
+
+    $form['submit'] = array(
+		'#type' => 'submit',
+        '#weight' => 11,
+		'#value' => t('Submit'),
+	);
+    
+	//drupal_render($form);
+	return $form;
+}
+function import508data_form_submit($form, &$form_state) {
+
+    require_once('sites/all/modules/querypath/QueryPath/QueryPath.php');
+	$html_obj = new simple_html_dom();
+    QueryPathOptions::merge(array('ignore_parser_warnings' => TRUE));
+    $dirlist = "";
+    $html_file_count = 0;
+    $output = "";
+    $content_type = "";
+
+    $cxt = array('context'=> stream_context_create());
+    //$url = 'sites/all/modules/import_bulkcontent/mytest.html';
+    $url = check_plain($form_state['values']['path']);
+    $content_type = check_plain($form_state['values']['contents']);
+
+
+    //Get Root Publications Menu MLID
+    $parent_publication_id =  get_publication_menu_id();
+
+    //Get Publication name from the dir path
+    /*
+ // Check for Publication Tree
+
+
+    if(trim($mlidplid) != "#")
+    {
+        $parts = explode('#',$mlidplid);
+        $mlidofpub = $parts[0];
+        $plidofpub = $parts[1];
+        echo "<br>MLib-".$mlidofpub;
+        echo "<br>Plid-".$plidofpub;
+    }
+    else
+    {
+        $link['link_title'] = $publication_name;
+        $link['link_path'] = "publications/".$publication_name;
+        $link['router_path'] = "node/" . '%';
+        $link['module'] = 'menu';
+        $link['plid'] = $parent_publication_id;
+
+        menu_link_save($link);
+        echo "<bR>Menu link saved";
+    }
+     // End of Code
+     */
+
+    //return $output;
+    $dirlist = import508data_getFileList($url, true);
+    $output .= "<table border='1'>\n";
+    $output .= "<tr><th>Sr.No</th><th>Name</th><th>Type</th><th>Status</th></tr>\n";
+    $returned_val =array();
+     foreach($dirlist as $file)
+     {
+         $extension = substr($file['name'], -4, 4);
+         if(($extension == "html") || ($extension == ".htm"))
+         {
+            $html_file_count++;
+            $custhtml = file_get_html($file['name']);
+
+            $html_title = qp($file['name'],'title',$cxt)->text();
+            $h2content = qp($file['name'], 'h2',$cxt)->text();
+
+            $body_content = "";
+            //Dynamic Node Creation
+            $node = new stdClass();
+            //Check for Parent Child Condition
+            $pathvar = remove_default_path_elements($file['name']);
+            $path_array = explode("/",$pathvar);
+            $publication_name = $path_array[0];
+            $publication_one_tree = $path_array[1];
+            $publication_two_tree = $path_array[2];
+            $publication_three_tree = $path_array[3];
+
+            $publication_name = str_replace("_"," ",$publication_name);
+            $publication_name = ucwords($publication_name); //returns Maritime Trade And Transportation
+            $debugmsg = $pathvar."==".count($path_array);
+             drupal_set_message($debugmsg,'status');
+             $pubexists = "";
+            switch(count($path_array))
+            {
+                case 2:
+                    $pubexists = check_publication_exists($publication_name,$parent_publication_id);
+                    if($pubexists)
+                    {
+
+                        $node->type = $content_type;
+                        node_object_prepare($node);
+                        $node->status = 1;
+                        $node->active = 1;
+                        $resu = $custhtml->find('h2',0);
+                        $node->title    = t(check_plain($h2content));
+                        $resu = str_replace('<h2 style="display:none">',"", $resu);
+                        $resu = str_replace('</h2>','',$resu);
+                        $resu = str_replace('<br>',' ',$resu);
+                        $node->field_alt_title['und'][0]['value'] = $resu;
+                        $node->language = LANGUAGE_NONE;
+
+                        $handle = fopen($file['name'], 'r');
+                        while(!feof($handle))
+                        {
+                            $line = fgets($handle);
+                            if($line)
+                            {
+                                $node->body[$node->language][0]['value'] .= mb_convert_encoding($line , 'UTF-8');
+                            }
+                            else
+                            {
+                                 $node->body[$node->language][0]['value'] .= "<br/>";
+                            }
+                        }
+
+                        $node->body[$node->language][0]['summary'] = '';
+                        $node->body[$node->language][0]['format']  = 'full_html';
+                        $node->menu['enabled'] = 1;
+                        $node->menu['link_title'] = $node->title;
+                        $node->menu['description'] = $node->title;
+                        $node->menu['parent'] = 'main-menu';
+                        drupal_set_message($pubexists,'error');
+                        $node->menu['plid'] = $pubexists;
+                        $path = ''.check_plain($file['name']);
+                        $node->path = array('alias' => $path);
+                        node_save($node);
+                        fclose($handle);
+                    }
+                    break;
+
+
+                case 3:
+                    if($publication_one_tree == "html")
+                    {
+                        $pubexists = check_publication_exists($publication_name,$parent_publication_id);
+                        if($pubexists)
+                        {
+                            $node->type = $content_type;
+                            node_object_prepare($node);
+                            $node->status = 1;
+                            $node->active = 1;
+                            $resu = $custhtml->find('h2',0);
+                            $node->title    = t(check_plain($h2content));
+                            $resu = str_replace('<h2 style="display:none">',"", $resu);
+                            $resu = str_replace('</h2>','',$resu);
+                            $resu = str_replace('<br>',' ',$resu);
+                            $node->field_alt_title['und'][0]['value'] = $resu;
+                            $node->language = LANGUAGE_NONE;
+
+                            $handle = fopen($file['name'], 'r');
+                            while(!feof($handle))
+                            {
+                                $line = fgets($handle);
+                                if($line)
+                                {
+                                    $node->body[$node->language][0]['value'] .= mb_convert_encoding($line , 'UTF-8');
+                                }
+                                else
+                                {
+                                     $node->body[$node->language][0]['value'] .= "<br/>";
+                                }
+                            }
+
+                            $node->body[$node->language][0]['summary'] = '';
+                            $node->body[$node->language][0]['format']  = 'full_html';
+                            $node->menu['enabled'] = 1;
+                            $node->menu['link_title'] = $node->title;
+                            $node->menu['description'] = $node->title;
+                            $node->menu['parent'] = 'main-menu';
+                            drupal_set_message($pubexists,'error');
+                            $node->menu['plid'] = $pubexists;
+                            $path = ''.check_plain($file['name']);
+                            $node->path = array('alias' => $path);
+                            node_save($node);
+                            fclose($handle);
+                        }
+                    }
+                    else
+                    {
+                        //Condition if there is a non html folder like 2008/index.html
+                        //get sub parent id
+                        $subparentid = get_sub_parent_id($publication_one_tree,$parent_publication_id,$publication_name);
+
+                        echo $subparentid;die;
+
+
+
+                    }
+
+                    break;
+                case 4:
+                    //$pubmlid1 = get_create_pubmlid1($parent_publication_id,$publication_one_tree,$publication_two_tree);
+                    break;
+            }
+
+
+            //set parent node for this node which is always publications
+
+           // $node->menu['plid'] = $parent_publication_id;
+            //drupal_set_message($node->menu['plid'],'status');
+
+
+
+            //  update_publication_workbench_access($node);
+
+            if($node->nid)
+            {
+                $output .= "<tr>\n";
+                $output .= "<td>{$html_file_count}</td>";
+                $output .= "<td>{$file['name']}</td>\n";
+                $output .= "<td>{$content_type}</td>\n";
+                $output .= "<td>Passed</td>";
+                $output .= "</tr>\n";
+                $newfile = $file['name']."_processed";
+               // rename($file['name'], $newfile);
+            }
+            else
+            {
+                $output .= "<tr>\n";
+                $output .= "<td>{$html_file_count}</td>";
+                $output .= "<td>{$file['name']}</td>\n";
+                $output .= "<td>{$content_type}</td>\n";
+                $output .= "<td style='display:color=red'>Failed</td>";
+                $output .= "</tr>\n";
+            }
+         }
+     }
+    drupal_set_message($output,'status');
+}
+//get the subparent publication id related to parent
+function get_sub_parent_id($subtree,$pid,$ppname)
+{
+    drupal_set_message("subtree $subtree","error");
+    drupal_set_message("pid $pid","error");
+    drupal_set_message("ppname $ppname","error");
+
+    $result = db_query('Select mlid, link_title from {menu_links} where link_title like :subtree and plid = :pid',array(':subtree'=>trim($ppname), ':pid'=>$pid));
+
+    foreach ($result as $record) {
+        $mlid = $record->mlid;
+    }
+    $ppname = str_replace(" ","_",$ppname);
+    $ppname = strtolower($ppname);
+    if(!$mlid)
+    {
+        $link['link_title'] = $subtree;
+        $link['menu_name'] = "main-menu";
+        $link['link_path'] = "publications/".trim($ppname);
+        $link['router_path'] = "node/" . '%';
+        $link['module'] = 'menu';
+        $link['plid'] = $mlid;
+        $link['p1'] = $pid;
+        $link['p2'] = $mlid;
+
+
+        menu_link_save($link);
+        drupal_set_message("Menu Link $subtree Saved",'status');
+
+        $result1 = db_select('menu_links', 'm')
+            ->fields('m', array('mlid'))
+            ->condition('m.link_title', $subtree,'=')
+            ->condition('m.mlid',$mlid,'=')
+            ->execute()
+            ->fetchAssoc();
+
+        $mlid1 = $result1["mlid"];
+        drupal_set_message("in if $mlid1",'error');
+        return $mlid1;
+
+    }
+    else{
+        drupal_set_message("in else $mlid",'error');
+        return $mlid;
+    }
+}
+function check_publication_exists($pbname,$parentpubid)
+{
+
+    $result = db_select('menu_links', 'm')
+    ->fields('m', array('mlid'))
+    ->condition('m.link_title', $pbname,'=')
+    ->execute()
+    ->fetchAssoc();
+
+    $mlid = $result["mlid"];
+    if(!$mlid)
+    {
+        $link['link_title'] = $pbname;
+        $link['menu_name'] = "main-menu";
+        $link['link_path'] = "publications/".$pbname;
+        $link['router_path'] = "node/" . '%';
+        $link['module'] = 'menu';
+        $link['plid'] = $parentpubid;
+
+        menu_link_save($link);
+        drupal_set_message("Menu Link $pbname Saved",'status');
+
+        $result1 = db_select('menu_links', 'm')
+            ->fields('m', array('mlid'))
+            ->condition('m.link_title', $pbname,'=')
+            ->execute()
+            ->fetchAssoc();
+
+        $mlid1 = $result1["mlid"];
+        return $mlid1;
+
+    }
+    else{
+        return $mlid;
+    }
+
+}
+function remove_default_path_elements($pathitem)
+{
+    $pathvar = str_replace("sites/default/files/publications/","",$pathitem);
+    return $pathvar;
+}
+
+/*
+ * This function will validate the menu settings to see if
+ * there is a menu that already exists before adding
+ */
+function get_publication_menu_id()
+{
+    $menu_name = "Publications";
+    $result = db_select('menu_links', 'm')
+    ->fields('m', array('mlid'))
+    ->condition('m.link_title', $menu_name,'=')
+    ->execute()
+    ->fetchAssoc();
+
+    $mlid = $result["mlid"];
+    return $mlid;
+}
+/*
+ * This function enables the program to check if a menu already exists.
+ */
+function validate_menu_exists($menu_title)
+{
+     $result = db_select('menu_links', 'm')
+    ->fields('m', array('mlid','plid'))
+    ->condition('m.link_title', $menu_title,'=')
+    ->execute()
+    ->fetchAssoc();
+
+    $mlid = $result["mlid"];
+    $plid = $result["plid"];
+
+    if(!$mlid && !plid)
+        return false;
+    else
+        return $mlid."#".$plid;
+}
+/*
+*Removing this function for now
+*/
+/*
+function update_publication_workbench_access($node)
+{
+     $name_val = "Publication";
+    $result = db_select('taxonomy_term_data', 't')
+    ->fields('t', array('tid', 'vid', 'name'))
+    ->condition('t.name', $name_val,'=')
+    ->execute()
+    ->fetchAssoc();
+
+    $tid = $result["tid"];
+    $access_scheme = "taxonomy";
+
+    $workbench_access_nid = db_insert('workbench_access_node')
+            ->fields(array('nid', 'access_id', 'access_scheme'))
+            ->values(array(
+                 'nid' => $node->nid,
+                 'access_id' => $tid,
+                 'access_scheme' => $access_scheme,
+            ))
+            ->execute();
+    $msg = "Workbench Section Updated";
+    drupal_set_message($msg, "status");
+}
+*/
+function import508data_getFileList($dir, $recurse=false)
+{
+    // array to hold return value
+    $retval = array();
+    // add trailing slash if missing
+    if(substr($dir, -1) != "/")
+        $dir .= "/";
+        // open pointer to directory and read list of files
+    $d = @dir($dir) or die("getFileList: Failed opening directory $dir for reading");
+    while(false !== ($entry = $d->read()))
+    {
+        // skip hidden files
+        if($entry[0] == ".") continue;
+        if(is_dir("$dir$entry"))
+        {
+             $retval[] = array( "name" => "$dir$entry/", "type" => filetype("$dir$entry"), "size" => 0, "lastmod" => filemtime("$dir$entry") );
+             if($recurse && is_readable("$dir$entry/"))
+             {
+                 $retval = array_merge($retval, import508data_getFileList("$dir$entry/", true));
+             }
+        }
+        elseif(is_readable("$dir$entry"))
+        {
+            $retval[] = array( "name" => "$dir$entry",   "size" => filesize("$dir$entry"), "lastmod" => filemtime("$dir$entry") );
+        }
+    }
+
+    $d->close();
+    return $retval;
+}

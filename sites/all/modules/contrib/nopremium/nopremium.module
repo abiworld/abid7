@@ -211,7 +211,8 @@ function nopremium_menu() {
  * @ingroup themeable
  */
 function theme_nopremium_message($variables) {
-  return '<div class="nopremium-message">'. check_markup(t(nopremium_get_message($variables['node']->type))) .'<a href="/abid7/user" id="register_here" class="register_here">Login/Register Here</a></div>';
+  $uri = 'articles';
+  return '<div class="nopremium-message">'. check_markup(t(nopremium_get_message($variables['node']->type))) .'</div>';
 }
 
 

@@ -44,7 +44,8 @@ include_once dirname(__FILE__) . '/theme/common.inc';
  */
 function bootstrap_theme(&$existing, $type, $theme, $path) {
   bootstrap_include($theme, 'theme/registry.inc');
-  return _bootstrap_theme($existing, $type, $theme, $path);
+  return _bootstrap_theme($existing, $type, $theme, $path)
+  ;
 }
 
 /**

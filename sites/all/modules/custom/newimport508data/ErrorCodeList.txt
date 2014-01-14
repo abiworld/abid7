@@ -1,0 +1,26 @@
+#
+# ErrorCodeList:
+#
+
+1 Fatal error from wrapper program.
+2 Source file is not readable.
+3 Missing source and/or result file name.
+4 Wrong result file name format. Use YYMMDDHHMMSS.html.
+5 
+6 
+7 
+8 
+9 
+
+
+101 Fatal error from code-cleaning program.
+102 
+103 
+104 
+105 
+
+201 Fatal error from table-processing program.
+202 
+203 
+204 
+205 

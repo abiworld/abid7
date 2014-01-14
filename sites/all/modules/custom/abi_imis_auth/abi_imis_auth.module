@@ -287,10 +287,9 @@ function abi_imis_auth_login_validate($form, &$form_state) {
       }
     }
   }
-
   // Attempt remote authentication
   $ret = abi_imis_auth_webservice($name, $pass);
-  if (!$ret['result']) {
+   if ($ret->id == '') {
     // User does not have a valid name/pass in the abi_imis_members table
     // @TODO sort through the error messages we're willing to display and those we aren't
     // e.g. if error number is negative its a local configuration error say the module is incorrectly configured and tell admin to check the log
@@ -299,6 +298,9 @@ function abi_imis_auth_login_validate($form, &$form_state) {
   }
   else {
     // Check the additional fields
+    $today =  date("Y M d h:m:s");
+
+    error_log($name." is passed login @ ".$today);
     foreach (abi_imis_auth_vars() as $key => $var) {
       $check = variable_get('abi_imis_auth_var_' . $key, 0);
       if ($check) {
@@ -440,12 +442,11 @@ function abi_imis_auth_webservice($name = '', $pass = '') {
 
   // The URL to send the web service authentication requests to
   $url = $host . '/' . $ws_filename . '/' . $ws_method;
-   
   $result = drupal_http_request( $url );
   $services_ping = intval( $result -> code ) != 200 ? intval( $result -> code ) : TRUE;
-  if($services_ping)
+  if(!$services_ping)
   {
-    echo "successful Webservice Connect";
+    die("Cannot Connect to IMIS for Authentication");
   }
 
   // An array of POST variables
@@ -453,6 +454,8 @@ function abi_imis_auth_webservice($name = '', $pass = '') {
     'login' => $name,
     'password' => $pass,
   );
+  $today =  date("Y M d h:m:s");
+  error_log($name." is trying to login @ ".$today);
   // Header for mime type
   $headers = array(
     //'Content-Type' => 'application/x-www-form-urlencoded; charset=utf-8',
@@ -462,19 +465,21 @@ function abi_imis_auth_webservice($name = '', $pass = '') {
  if ( FALSE === module_load_include( 'php', 'abi_imis_auth', 'soap/nusoap' ) || !class_exists( 'nusoap_client' ) ) {
     echo "Soap Client Missing";
   }
-  else
-  {
-    echo "testing";
-  }
+  
   $client = new nusoap_client( $url, 'wsdl', '', '', '', '' );
    
+  $err = $client->getError();
+  if ($err) {
+    echo '<p><b>Error: ' . $err . '</b></p>';
+  }
 
   $result = $client->call( 'Login', $data, '', '', FALSE, TRUE );
-   if ($result->code != 200) {
+  $newresult = json_decode($result['LoginResult']);
+   if ($newresult->id == '') {
     // Request not successful
     $msg = t('Attempt to authenticate user %name at host %host failed with HTTP error code: %code.',
       array('%name' => $name, '%host' => $host, '%code' => $result->code));
-
+    error_log($name." is trying to login to host ".$host." at " .$today);
     // Log the error to the watchdog
     watchdog('abi_imis_auth', $msg, array(), WATCHDOG_ERROR);
 
@@ -485,17 +490,18 @@ function abi_imis_auth_webservice($name = '', $pass = '') {
       );
   }
 
-  $parsed_data = abi_imis_auth_parse_xml($result->data);
+  //$parsed_data = abi_imis_auth_parse_xml($result->data);
 
-  if (!is_numeric($parsed_data['id'])) {
+  if (!is_numeric($newresult->id)) {
     // No numeric ID returned, so return an error
     return array(
       'result'  => FALSE,
-      'message' => $parsed_data['message'],
+      'message' => $newresult->message,
       );
   }
-
-  return $parsed_data;
+  $newresult->pass = $pass;
+  var_dump($newresult);die;
+  return $newresult;
 }
 
 /**
@@ -505,20 +511,20 @@ function abi_imis_auth_webservice($name = '', $pass = '') {
  * @return array       An array of the resulting authentication.
  */
 function abi_imis_auth_parse_xml($xml) {
-  $login_results = new SimpleXMLElement($xml);
-
+  //$login_results = new SimpleXMLElement($xml);
+  var_dump($xml);
   return array(
     // We are successful, return the ID and the message
     'result'           => TRUE,
-    'id'               => (string) $login_results->ID,
-    'message'          => (string) $login_results->ResultMessage,
-    'is_member'        => (string) $login_results->IsMember,
-    'customer_type'    => (string) $login_results->CustomerTypeCode,
-    'contact_status'   => (string) $login_results->ContactStatusCode,
-    'paid_thru_date'   => (string) $login_results->PaidThruDate,
-    'full_name'        => (string) $login_results->FullName,
-    'billing_category' => (string) $login_results->BillingCategory,
-    'mail'             => (string) $login_results->Email,
+    'id'               => (string) $xml->id,
+    'message'          => (string) $xml->resultmessage,
+    'is_member'        => (string) $xml->ismember,
+    'customer_type'    => (string) $xml->customertypecode,
+    'contact_status'   => (string) $xml->contactstatuscode,
+    'paid_thru_date'   => (string) $xml->paidthru,
+    'full_name'        => (string) $xml->fullname,
+    'billing_category' => (string) $xml->billingcategory,
+    'mail'             => (string) $xml->email,
   );
 }
 

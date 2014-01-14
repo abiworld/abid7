@@ -1,0 +1,4 @@
+name = Import 508 Data
+description = This Module will provide interface for uploading html files which are 508 and create Drupal 7 Node
+package = DOT
+core=7.x

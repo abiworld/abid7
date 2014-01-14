@@ -1,0 +1,7 @@
+name = ABI Members Sync
+description = Enables the site to sync abi members from imis to drupal using cron.
+package = ABI
+version = VERSION
+core = 7.x
+
+configure = admin/config/sync

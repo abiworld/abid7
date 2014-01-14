@@ -1,3 +1,19 @@
+Search API 1.11 (12/25/2013):
+-----------------------------
+- #1879196 by drunken monkey: Fixed invalid old indexes causing errors.
+- #2155127 by drunken monkey: Clarified the scope of the "Node access" and
+  "Exclude unpublished nodes" data alterations.
+- #2155575 by drunken monkey: Fixed incorrect "Server index status" warnings.
+- #2159011 by idebr, drunken monkey: Fixed highlighting of keywords with PCRE
+  special characters.
+- #2155721 by rjacobs, drunken monkey: Added support for Views' get_total_rows
+  property.
+- #2158873 by drumm, drunken monkey: Fixed "all of" operator of Views entity
+  filter handler.
+- #2156021 by jgullstr: Fixed confirm message when disabling servers.
+- #2146435 by timkang: Fixed Views paging with custom pager add-ons.
+- #2150347 by drunken monkey: Added access callbacks for indexes and servers.
+
 Search API 1.10 (12/09/2013):
 -----------------------------
 - #2130819 by drunken monkey, Bojhan: Added UI improvements for the "View" tabs.

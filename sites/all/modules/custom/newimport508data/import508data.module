@@ -1,0 +1,226 @@
+<?php
+error_reporting(E_ALL ^ E_NOTICE);
+set_time_limit(0);
+/**
+ * import508data_menu()
+ *
+ * @return
+ */
+function import508data_menu()
+{
+	$items = array();
+	$items['import508data/add'] = array(
+	    'title' => 'Import 508 HTML',
+        'page callback' => 'drupal_get_form',
+	    'page arguments' => array('import508data_form'),
+	 	'access arguments' => array('access content'),
+	    'type' => MENU_SUGGESTED_ITEM,
+	  );
+	return $items;
+}
+
+
+/**
+ * import508data_form()
+ *
+ * @return
+ */
+
+function import508data_form() {
+
+ 	$form['#attributes'] = array('enctype' => "multipart/form-data");
+     $content_types = _node_types_build()->types;
+     $data = array();
+     foreach($content_types as $key => $keyfield)
+     {
+         $data[$key] = $content_types[$key]->name;
+     }
+    $form['contents'] = array(
+         '#type' => 'radios',
+         '#title' => t('List of Content Types'),
+         '#weight' => 8,
+         '#required' => TRUE,
+         '#options' => $data,
+         '#description' => t('Uploaded HTML content will be default uploaded to body field of the content type'),
+    );
+
+    $form['path'] = array(
+					 '#title' => t('Content Path'),
+					 '#type' => 'textfield',
+                    '#size' => 125,
+                    '#weight' => 9,
+                    '#required' => TRUE,
+                    '#default_value' => "sites/rita.dot.gov.bts/files/",
+					 '#description'=>'Enter the file location on the Server e.x. sites/rita.dot.gov.bts/files/publications ',
+						   
+	);
+    $form['submit'] = array(
+		'#type' => 'submit',
+        '#weight' => 10,
+		'#value' => t('Submit'),
+	);
+    
+	//drupal_render($form);
+	return $form;
+}
+function import508data_form_submit($form, &$form_state) {
+
+    require_once('sites/all/modules/querypath/QueryPath/QueryPath.php');
+	$html_obj = new simple_html_dom();
+    QueryPathOptions::merge(array('ignore_parser_warnings' => TRUE));
+    $dirlist = "";
+    $html_file_count = 0;
+    $output = "";
+    $content_type = "";
+
+    $cxt = array('context'=> stream_context_create());
+     //$url = 'sites/all/modules/import_bulkcontent/mytest.html';
+     $url = check_plain($form_state['values']['path']);
+     $content_type = check_plain($form_state['values']['contents']);
+     $dirlist = import508data_getFileList($url, true);
+	var_dump($dirlist);die;
+    $output .= "<table border='1'>\n";
+    $output .= "<tr><th>Sr.No</th><th>Name</th><th>Type</th><th>Status</th></tr>\n";
+    $returned_val =array();
+     foreach($dirlist as $file)
+     {
+         $extension = substr($file['name'], -4, 4);
+         if(($extension == "html") || ($extension == ".htm"))
+         {
+            $html_file_count++;
+		    $custhtml = file_get_html($file['name']);
+
+            $html_title = qp($file['name'],'title',$cxt)->text();
+            $h2content = qp($file['name'], 'h2',$cxt)->text();
+			drupal_set_message($file['name'],'status');
+		    $body_content = "";
+            //Dynamic Node Creation
+            $node = new stdClass();
+            $node->type = $content_type;
+            node_object_prepare($node);
+            $node->status = 1;
+            $node->active = 1;
+            $node->title    = t(check_plain($h2content));
+            $resu = $custhtml->find('h2',0);
+            $resu = str_replace('<h2 style="display:none">',"", $resu);
+            $resu = str_replace('</h2>','',$resu);
+            $resu = str_replace('<br>',' ',$resu);
+            $node->field_alt_title['und'][0]['value'] = $resu;
+            $node->language = LANGUAGE_NONE;
+
+            $handle = fopen($file['name'], 'r');
+            while(!feof($handle))
+            {
+                $line = fgets($handle);
+                if($line)
+                {
+                    $node->body[$node->language][0]['value'] .= mb_convert_encoding($line , 'UTF-8');
+                }
+                else
+                {
+                    $node->body[$node->language][0]['value'] .= "<br/>";
+                }
+             }
+
+             $node->body[$node->language][0]['summary'] = '';
+             $node->body[$node->language][0]['format']  = 'full_html';
+
+            $node->menu['enabled'] = 1;
+            $node->menu['link_title'] = $node->title;
+            $node->menu['description'] = $node->title;
+            $node->menu['parent'] = 'main-menu';
+             //$node->menu['plid'] = "1146";
+			$node->menu['plid'] = "4825";
+
+            $path = ''.check_plain($file['name']);
+            $node->path = array('alias' => $path);
+            node_save($node);
+
+          //  update_publication_workbench_access($node);
+            fclose($handle);
+            if($node->nid)
+            {
+                $output .= "<tr>\n";
+                $output .= "<td>{$html_file_count}</td>";
+                $output .= "<td>{$file['name']}</td>\n";
+                $output .= "<td>{$content_type}</td>\n";
+                $output .= "<td>Passed</td>";
+                $output .= "</tr>\n";
+                $newfile = $file['name']."_processed";
+                rename($file['name'], $newfile);
+
+            }
+            else
+            {
+                $output .= "<tr>\n";
+                $output .= "<td>{$html_file_count}</td>";
+                $output .= "<td>{$file['name']}</td>\n";
+                $output .= "<td>{$content_type}</td>\n";
+                $output .= "<td style='display:color=red'>Failed</td>";
+                $output .= "</tr>\n";
+
+            }
+         }
+     }
+    drupal_set_message($output,'status');
+    //return $output;
+
+}
+/*
+*Removing this function for now
+*/
+/*
+function update_publication_workbench_access($node)
+{
+     $name_val = "Publication";
+    $result = db_select('taxonomy_term_data', 't')
+    ->fields('t', array('tid', 'vid', 'name'))
+    ->condition('t.name', $name_val,'=')
+    ->execute()
+    ->fetchAssoc();
+
+    $tid = $result["tid"];
+    $access_scheme = "taxonomy";
+
+    $workbench_access_nid = db_insert('workbench_access_node')
+            ->fields(array('nid', 'access_id', 'access_scheme'))
+            ->values(array(
+                 'nid' => $node->nid,
+                 'access_id' => $tid,
+                 'access_scheme' => $access_scheme,
+            ))
+            ->execute();
+    $msg = "Workbench Section Updated";
+    drupal_set_message($msg, "status");
+}
+*/
+function import508data_getFileList($dir, $recurse=false)
+{
+    // array to hold return value
+    $retval = array();
+    // add trailing slash if missing
+    if(substr($dir, -1) != "/")
+        $dir .= "/";
+        // open pointer to directory and read list of files
+    $d = @dir($dir) or die("getFileList: Failed opening directory $dir for reading");
+    while(false !== ($entry = $d->read()))
+    {
+        // skip hidden files
+        if($entry[0] == ".") continue;
+        if(is_dir("$dir$entry"))
+        {
+             $retval[] = array( "name" => "$dir$entry/", "type" => filetype("$dir$entry"), "size" => 0, "lastmod" => filemtime("$dir$entry") );
+             if($recurse && is_readable("$dir$entry/"))
+             {
+                 $retval = array_merge($retval, import508data_getFileList("$dir$entry/", true));
+             }
+        }
+        elseif(is_readable("$dir$entry"))
+        {
+            $retval[] = array( "name" => "$dir$entry",   "size" => filesize("$dir$entry"), "lastmod" => filemtime("$dir$entry") );
+        }
+    }
+
+    $d->close();
+    return $retval;
+}
