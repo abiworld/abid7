@@ -1,0 +1,7 @@
+<?php
+/**
+ * @file
+ * Code for the Journal Articles feature.
+ */
+
+include_once 'journal_articles.features.inc';
