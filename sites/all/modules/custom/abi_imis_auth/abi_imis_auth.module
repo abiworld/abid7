@@ -269,9 +269,15 @@ function abi_imis_auth_login_validate($form, &$form_state) {
 
   // Check if the account already exists or its a new user
   $account = user_load_by_name($name);
+
   if (isset($account->uid)) {
     // Find out if the user is in the list of exempt users
+   $uid = user_authenticate($name, $pass);
+ 
+    $form_state['uid'] = $uid;
+    return;
     $list = abi_imis_auth_textarea_to_array('abi_imis_auth_exempt');
+      
       // Check if uid 1 is in the list
     if (!in_array(1, $list)) {
       //if not add it to the list to ensure site admin uses normal authentication
@@ -281,15 +287,18 @@ function abi_imis_auth_login_validate($form, &$form_state) {
       if ($uid == $account->uid) {
         // This is the site admin or another user on the list,
         // we just do normal authentication and return (skipping external authentication)
+        echo "inside if";
         $uid = user_authenticate($name, $pass);
+ 
         $form_state['uid'] = $uid;
         return;
       }
     }
   }
+ 
   // Attempt remote authentication
   $ret = abi_imis_auth_webservice($name, $pass);
-   if ($ret->id == '') {
+  if ($ret->id == '') {
     // User does not have a valid name/pass in the abi_imis_members table
     // @TODO sort through the error messages we're willing to display and those we aren't
     // e.g. if error number is negative its a local configuration error say the module is incorrectly configured and tell admin to check the log
@@ -299,7 +308,7 @@ function abi_imis_auth_login_validate($form, &$form_state) {
   else {
     // Check the additional fields
     $today =  date("Y M d h:m:s");
-
+    $ret = (array) $ret;
     error_log($name." is passed login @ ".$today);
     foreach (abi_imis_auth_vars() as $key => $var) {
       $check = variable_get('abi_imis_auth_var_' . $key, 0);
@@ -342,12 +351,12 @@ function abi_imis_auth_login_validate($form, &$form_state) {
       // display a message to the user about the email address change. If the email addresses from both systems match, 
       // take no additional action and proceed with finalizing the login.
 
-      if (!empty($ret['mail']) && $user->mail != $ret['mail']) {
+      if (!empty($ret['email']) && $user->mail != $ret['email']) {
         $msg = variable_get('abi_imis_auth_email_changed_message', '');
         if ($msg) {
           drupal_set_message(filter_xss($msg));
         }
-        $user->mail = $ret['mail'];
+        $user->mail = $ret['email'];
         db_update('users')->fields(array('mail' => $ret['mail']))->condition('uid', $user->uid)->execute();
       }
       
@@ -368,7 +377,7 @@ function abi_imis_auth_login_validate($form, &$form_state) {
       // Create a new local user.  We do not call user_external_login_register()
       // because it assumes the "regular" way of Drupal user registration,
       // i.e. generate a random password, ...etc. We don't want that workflow.
-      $uid = abi_imis_auth_user_save($name, $pass, $ret['id'], $ret['mail'], $ret);
+      $uid = abi_imis_auth_user_save($name, $pass, $ret['id'], $ret['email'], $ret);
       $form_state['uid'] = $uid;
       return;
     }
@@ -388,7 +397,7 @@ function abi_imis_auth_check_values($key, $values = array()) {
  */
 function abi_imis_auth_user_save($name, $pass, $member_id, $mail, $data) {
   global $user;
-
+ 
   // Create a user array from the data
   $module = 'abi_imis_auth';
   $userinfo = array(
@@ -402,16 +411,30 @@ function abi_imis_auth_user_save($name, $pass, $member_id, $mail, $data) {
   );
   // Save it to the user table
   $account = user_save(NULL, $userinfo);
-
+  $paid_thru = substr($data['paid_thru'], 6,-2);
+  $seconds = $paid_thru / 1000;
+  $paid_thru = date("Y-m-d", $seconds);
   // Save the remote user id
   db_delete('abi_imis_members')->condition('member_id', $member_id)->execute();
   db_insert('abi_imis_members')
     ->fields(array(
       'member_id' => $member_id,
       'uid' => $account->uid,
-      'customer_type' => $data['customer_type'],
-      'paid_thru_date' => $data['paid_thru_date'],
-      'full_name' => $data['full_name'],
+      'email'=> $mail,
+      'company' => $data['company'],
+      'address_1' => $data['address_1'],
+      'address_2' => $data['address_2'],
+      'city' => $data['city'],
+      'state_province' => $data['state_province'],
+      'zip' => $data['zip'],
+      'country' => $data['country'],
+      'work_phone' => $data['work_phone'],
+      'fax' => $data['fax'],
+      'prefix' => $data['prefix'],
+      'suffix' => $data['suffix'],
+      'customer_type' => $data['member_type'],
+      'paid_thru_date' => $paid_thru,
+      'full_name' => $data['first_name']." ".$data['middle_name']." ".$data['last_name'],
     ))
     ->execute();
 
@@ -490,8 +513,6 @@ function abi_imis_auth_webservice($name = '', $pass = '') {
       );
   }
 
-  //$parsed_data = abi_imis_auth_parse_xml($result->data);
-
   if (!is_numeric($newresult->id)) {
     // No numeric ID returned, so return an error
     return array(
@@ -500,32 +521,8 @@ function abi_imis_auth_webservice($name = '', $pass = '') {
       );
   }
   $newresult->pass = $pass;
-  var_dump($newresult);die;
-  return $newresult;
-}
 
-/**
- * A simple xml parsing function.
- *
- * @param  $xml        A text string that contains the xml to be parsed.
- * @return array       An array of the resulting authentication.
- */
-function abi_imis_auth_parse_xml($xml) {
-  //$login_results = new SimpleXMLElement($xml);
-  var_dump($xml);
-  return array(
-    // We are successful, return the ID and the message
-    'result'           => TRUE,
-    'id'               => (string) $xml->id,
-    'message'          => (string) $xml->resultmessage,
-    'is_member'        => (string) $xml->ismember,
-    'customer_type'    => (string) $xml->customertypecode,
-    'contact_status'   => (string) $xml->contactstatuscode,
-    'paid_thru_date'   => (string) $xml->paidthru,
-    'full_name'        => (string) $xml->fullname,
-    'billing_category' => (string) $xml->billingcategory,
-    'mail'             => (string) $xml->email,
-  );
+  return $newresult;
 }
 
 /**
@@ -543,6 +540,20 @@ function abi_imis_auth_user_view($account, $view_mode, $langcode) {
   if ($account->uid != 1 && !in_array($account->uid, $list)) {
     $result = db_query("SELECT * FROM {abi_imis_members} WHERE uid = :uid LIMIT 1", array(':uid' => $account->uid))->fetchAll();
     $result = reset($result);
+     if(_chk_diff_date($result->paid_thru_date) >= 180){
+          $msg = 'Your Subscription Expires in '._chk_diff_date($result->paid_thru_date).' days. Click Here to Renew';
+          drupal_set_message(t($msg), 'status', FALSE);
+        }
+        else if(_chk_diff_date($result->paid_thru_date) >= 30){
+          $msg = 'Your Subscription Expires in '._chk_diff_date($result->paid_thru_date).' days. Click Here to Renew';
+          drupal_set_message(t($msg), 'warning', FALSE);
+        }
+        else if(_chk_diff_date($result->paid_thru_date) == 0)
+        {
+          $msg = 'Your Subscription Expired today. Click Here to Renew';
+          drupal_set_message(t($msg), 'error', FALSE);
+        }
+        
     if ($result) {
       $account->content['membership_info'] = array(
         '#type' => 'user_profile_category',
@@ -571,12 +582,16 @@ function abi_imis_auth_user_view($account, $view_mode, $langcode) {
       // Special case for date since format_date() produces a notice when first 
       // argument isn't a UNIX timestamp.
       if (!empty($result->paid_thru_date)) {
+        
         $account->content['membership_info']['paid_thru_date'] = array(
           '#type' => 'user_profile_item',
           '#title' => t('Expiry Date'),
           '#markup' => format_date(strtotime($result->paid_thru_date), 'custom', 'Y-m-d'),
           '#weight' => 3,
         );
+       
+
+        
       }
     }
   }
@@ -603,4 +618,18 @@ function abi_imis_auth_menu_alter(&$items) {
   if ($disable_links) {
     $items['user/password']['access callback'] = FALSE;
   }
+}
+/**
+* Check if the date difference between curent date and membership expiry date
+*
+*
+*/
+function _chk_diff_date($mdate){
+  $today = date('2025-12-31');
+  $datediff = date_diff($mdate, $today);
+  $datetime1 = date_create($today);
+  $datetime2 = date_create($mdate);
+  $interval = date_diff($datetime1, $datetime2);
+ return $interval->format('%a');
+  //return $datediff;
 }

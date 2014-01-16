@@ -47,6 +47,7 @@ function abi_imis_auth_schema() {
       'password' => array(
         'type' => 'varchar',
         'length' => 255,
+        'default' => '',
         'not null' => TRUE,
         'description' => 'The {user}.password associated with the iMIS member.',
       ),
