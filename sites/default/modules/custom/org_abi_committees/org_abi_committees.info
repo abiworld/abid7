@@ -1,0 +1,11 @@
+name = ABI Committees
+description = ABI Committees custom module.
+
+dependencies[] = blog
+dependencies[] = views
+dependencies[] = views_ui
+
+package = org_abi_committees
+core = 7.x
+
+files[] = tests/org_abi_committees.test

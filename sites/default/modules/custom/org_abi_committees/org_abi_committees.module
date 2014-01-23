@@ -1,0 +1,97 @@
+<?php
+
+/**
+ * @file org_abi_committees.module
+ * TODO: Enter file description here.
+ */
+
+/**
+ * Implements hook_init().
+ *
+ * @see hook_init()
+ */
+function org_abi_committees_init() {
+
+}
+
+/**
+ * Implements hook_cron().
+ *
+ * @see hook_cron()
+ */
+function org_abi_committees_cron() {
+
+}
+
+/**
+ * Implements hook_menu().
+ *
+ * @see hook_menu()
+ */
+function org_abi_committees_menu() {
+  $items['committees/%'] = array(
+    'type' => MENU_CALLBACK,
+    'title' => 'Committees',
+    'page callback' => 'org_abi_committees_committees_page_callback',
+    'access arguments' => array('access content'),
+  );
+
+  return $items;
+}
+
+/**
+ * Implements hook_menu_alter().
+ *
+ * @see hook_menu_alter()
+ */
+function org_abi_committees_menu_alter(&$items) {
+
+}
+
+/**
+ * Implements hook_theme().
+ *
+ * @see hook_theme()
+ */
+function org_abi_committees_theme($existing, $type, $theme, $path) {
+
+}
+
+/**
+ * Implements hook_block_info().
+ *
+ * @see hook_block_info()
+ */
+function org_abi_committees_block_info() {
+
+}
+
+/**
+ * Implements hook_block_view().
+ *
+ * @see hook_block_view()
+ */
+function org_abi_committees_block_view($delta = '') {
+  $block = array();
+
+  switch ($delta) {
+    case 'syndicate':
+      $block['subject'] = t('Syndicate');
+      $block['content'] = array(
+        '#theme' => 'feed_icon',
+        '#url' => 'rss.xml',
+        '#title' => t('Syndicate'),
+      );
+      break;
+  }
+  return $block;
+}
+
+/**
+ * Implements hook_node_view().
+ *
+ * @see hook_node_view()
+ */
+function org_abi_committees_node_view($node, $view_mode, $langcode) {
+
+}
